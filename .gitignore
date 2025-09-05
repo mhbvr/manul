@@ -35,3 +35,4 @@ go.work.sum
 # Binaries
 server/server
 client/client
+dbbuilder/dbbuilder
