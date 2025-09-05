@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package catphotos;
+
+option go_package = "github.com/mhbvr/manul/proto";
+
+service CatPhotosService {
+  rpc ListCats(ListCatsRequest) returns (ListCatsResponse);
+  rpc ListPhotos(ListPhotosRequest) returns (ListPhotosResponse);
+  rpc GetPhoto(GetPhotoRequest) returns (GetPhotoResponse);
+}
+
+message ListCatsRequest {
+}
+
+message ListCatsResponse {
+  repeated uint64 cat_ids = 1;
+}
+
+message ListPhotosRequest {
+  uint64 cat_id = 1;
+}
+
+message ListPhotosResponse {
+  repeated uint64 photo_ids = 1;
+}
+
+message GetPhotoRequest {
+  uint64 cat_id = 1;
+  uint64 photo_id = 2;
+}
+
+message GetPhotoResponse {
+  bytes photo_data = 1;
+}
