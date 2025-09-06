@@ -10,70 +10,56 @@ import (
 
 type CatPhotosServer struct {
 	pb.UnimplementedCatPhotosServiceServer
-	catPhotos map[uint64]map[uint64][]byte
+	dbReader *DBReader
 }
 
-func NewCatPhotosServer() *CatPhotosServer {
-	server := &CatPhotosServer{
-		catPhotos: make(map[uint64]map[uint64][]byte),
+func NewCatPhotosServer(dbDir string) (*CatPhotosServer, error) {
+	dbReader, err := NewDBReader(dbDir)
+	if err != nil {
+		return nil, err
 	}
-	server.initializeTestData()
-	return server
+
+	return &CatPhotosServer{
+		dbReader: dbReader,
+	}, nil
 }
 
-func (s *CatPhotosServer) initializeTestData() {
-	// Initialize with some test data
-	s.catPhotos[1] = make(map[uint64][]byte)
-	s.catPhotos[2] = make(map[uint64][]byte)
-	s.catPhotos[3] = make(map[uint64][]byte)
-
-	// Add dummy photo data (in real implementation, these would be actual image bytes)
-	s.catPhotos[1][1] = []byte("dummy_cat_1_photo_1_data")
-	s.catPhotos[1][2] = []byte("dummy_cat_1_photo_2_data")
-	s.catPhotos[2][1] = []byte("dummy_cat_2_photo_1_data")
-	s.catPhotos[3][1] = []byte("dummy_cat_3_photo_1_data")
-	s.catPhotos[3][2] = []byte("dummy_cat_3_photo_2_data")
-	s.catPhotos[3][3] = []byte("dummy_cat_3_photo_3_data")
+func (s *CatPhotosServer) Close() error {
+	return s.dbReader.Close()
 }
 
 func (s *CatPhotosServer) ListCats(ctx context.Context, req *pb.ListCatsRequest) (*pb.ListCatsResponse, error) {
-	var catIds []uint64
-	for catId := range s.catPhotos {
-		catIds = append(catIds, catId)
+	catIds, err := s.dbReader.GetAllCatIDs()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get cat IDs: %v", err)
 	}
-	
+
 	return &pb.ListCatsResponse{
 		CatIds: catIds,
 	}, nil
 }
 
 func (s *CatPhotosServer) ListPhotos(ctx context.Context, req *pb.ListPhotosRequest) (*pb.ListPhotosResponse, error) {
-	photos, exists := s.catPhotos[req.CatId]
-	if !exists {
+	photoIds, err := s.dbReader.GetPhotoIDs(req.CatId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get photo IDs: %v", err)
+	}
+
+	if len(photoIds) == 0 {
 		return nil, status.Errorf(codes.NotFound, "cat with ID %d not found", req.CatId)
 	}
-	
-	var photoIds []uint64
-	for photoId := range photos {
-		photoIds = append(photoIds, photoId)
-	}
-	
+
 	return &pb.ListPhotosResponse{
 		PhotoIds: photoIds,
 	}, nil
 }
 
 func (s *CatPhotosServer) GetPhoto(ctx context.Context, req *pb.GetPhotoRequest) (*pb.GetPhotoResponse, error) {
-	photos, catExists := s.catPhotos[req.CatId]
-	if !catExists {
-		return nil, status.Errorf(codes.NotFound, "cat with ID %d not found", req.CatId)
+	photoData, err := s.dbReader.GetPhotoData(req.CatId, req.PhotoId)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "photo with cat_id=%d, photo_id=%d not found: %v", req.CatId, req.PhotoId, err)
 	}
-	
-	photoData, photoExists := photos[req.PhotoId]
-	if !photoExists {
-		return nil, status.Errorf(codes.NotFound, "photo with ID %d not found for cat %d", req.PhotoId, req.CatId)
-	}
-	
+
 	return &pb.GetPhotoResponse{
 		PhotoData: photoData,
 	}, nil
