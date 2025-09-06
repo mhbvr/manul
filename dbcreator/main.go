@@ -7,11 +7,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mhbvr/manul"
+	"github.com/mhbvr/manul/db/bolt"
+	"github.com/mhbvr/manul/db/filetree"
 )
 
 func main() {
 	var (
-		dbFile    = flag.String("db", "./catdb2.db", "Database file path")
+		dbType    = flag.String("type", "filetree", "Database type: filetree or bolt")
+		dbPath    = flag.String("db", "", "Database path (directory for filetree, file for bolt)")
 		srcDir    = flag.String("src", "", "Source directory containing photo files")
 		batchSize = flag.Int("batch-size", 100, "Number of photos to process in each transaction")
 	)
@@ -20,37 +25,35 @@ func main() {
 	if *srcDir == "" {
 		log.Fatal("Source directory must be specified with -src flag")
 	}
-
-	builder, err := New(*dbFile)
-	if err != nil {
-		log.Fatalf("Failed to create database builder: %v", err)
+	
+	if *dbPath == "" {
+		log.Fatal("Database path must be specified with -db flag")
 	}
-	defer builder.Close()
 
+	var writer manul.DBWriter
+	var err error
+
+	switch *dbType {
+	case "filetree":
+		writer, err = filetree.New(*dbPath)
+	case "bolt":
+		writer, err = bolt.New(*dbPath)
+	default:
+		log.Fatalf("Unknown database type: %s (must be 'filetree' or 'bolt')", *dbType)
+	}
+
+	if err != nil {
+		log.Fatalf("Failed to create database writer: %v", err)
+	}
+	defer writer.Close()
+
+	fmt.Printf("Creating %s database at: %s\n", *dbType, *dbPath)
 	fmt.Printf("Scanning directory: %s\n", *srcDir)
 
-	var totalFiles, processedFiles, skippedFiles int
-
-	// First pass: count total files
-	err = filepath.Walk(*srcDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			totalFiles++
-		}
-		return nil
-	})
-
-	if err != nil {
-		log.Fatalf("Failed to count files in source directory: %v", err)
-	}
-
-	fmt.Printf("Found %d files to process\n", totalFiles)
-	fmt.Printf("Using batch size: %d\n", *batchSize)
-
-	// Collect file paths only
+	var totalFiles, skippedFiles int
 	var filePaths []string
+
+	// Single scan: collect file paths and count files
 	err = filepath.Walk(*srcDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -60,6 +63,7 @@ func main() {
 			return nil
 		}
 
+		totalFiles++
 		filename := info.Name()
 		if _, _, ok := GetIDs(filename); !ok {
 			skippedFiles++
@@ -72,13 +76,16 @@ func main() {
 	})
 
 	if err != nil {
-		log.Fatalf("Failed to collect file paths: %v", err)
+		log.Fatalf("Failed to scan source directory: %v", err)
 	}
 
-	processedFiles = 0
+	processedFiles := 0
+	fmt.Printf("Found %d files total, %d will be processed, %d skipped\n", totalFiles, len(filePaths), skippedFiles)
+	fmt.Printf("Using batch size: %d\n", *batchSize)
+
 	totalBatches := (len(filePaths) + *batchSize - 1) / *batchSize
 
-	// Process files in streaming batches
+	// Process files in batches
 	for i := 0; i < len(filePaths); i += *batchSize {
 		end := i + *batchSize
 		if end > len(filePaths) {
@@ -91,7 +98,7 @@ func main() {
 		fmt.Printf("Processing batch %d/%d (%d photos)\n", batchNum, totalBatches, len(batchPaths))
 
 		// Read and process this batch
-		var batch []PhotoItem
+		var batch []manul.PhotoItem
 		for _, path := range batchPaths {
 			filename := filepath.Base(path)
 			catID, photoID, ok := GetIDs(filename)
@@ -104,7 +111,7 @@ func main() {
 				log.Fatalf("Failed to read photo file %s: %v", path, err)
 			}
 
-			batch = append(batch, PhotoItem{
+			batch = append(batch, manul.PhotoItem{
 				CatID:     catID,
 				PhotoID:   photoID,
 				FilePath:  path,
@@ -115,8 +122,8 @@ func main() {
 				catID, photoID, len(photoData))
 		}
 
-		fmt.Printf("Writing batch to DB %d/%d (%d photos)\n", batchNum, totalBatches, len(batchPaths))
-		if err := builder.AddPhotosBatch(batch); err != nil {
+		fmt.Printf("Writing batch to DB %d/%d (%d photos)\n", batchNum, totalBatches, len(batch))
+		if err := writer.AddPhotosBatch(batch); err != nil {
 			log.Fatalf("Failed to process batch %d: %v", batchNum, err)
 		}
 
@@ -124,18 +131,23 @@ func main() {
 	}
 
 	fmt.Printf("\nDatabase build completed successfully:\n")
-	fmt.Printf("  Database file: %s\n", *dbFile)
+	fmt.Printf("  Database type: %s\n", *dbType)
+	fmt.Printf("  Database path: %s\n", *dbPath)
 	fmt.Printf("  Total files found: %d\n", totalFiles)
 	fmt.Printf("  Files processed: %d\n", processedFiles)
 	fmt.Printf("  Files skipped: %d\n", skippedFiles)
 
-	// Show file size
-	if stat, err := os.Stat(*dbFile); err == nil {
-		fmt.Printf("  Database size: %d bytes\n", stat.Size())
+	// Show database size
+	if *dbType == "bolt" {
+		if stat, err := os.Stat(*dbPath); err == nil {
+			fmt.Printf("  Database size: %d bytes\n", stat.Size())
+		}
+	} else {
+		// For filetree, show directory size
+		fmt.Printf("  Database created in directory: %s\n", *dbPath)
 	}
 }
 
-// Reuse the same GetIDs function
 func GetIDs(filename string) (catID, photoID uint64, ok bool) {
 	var cat, photo uint64
 	n, err := fmt.Sscanf(strings.ToLower(filename), "%d_%d.jpg", &cat, &photo)
