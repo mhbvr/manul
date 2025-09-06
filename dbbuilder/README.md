@@ -12,10 +12,9 @@ DBBuilder creates a database with the following structure:
   - Values: empty (reserved for future use)
 
 - **data/**: Hierarchical directory structure for photo files
-  - Path format: `data/xx/yy/filename`
+  - Path format: `data/xx/filename`
   - Filename: SHA256 hash of the cat_id,photo_id key (hex format)
   - xx: First 2 characters of filename
-  - yy: Next 2 characters of filename
 
 ## Usage
 
@@ -66,11 +65,9 @@ mydb/
 ├── meta                    # bbolt database
 └── data/
     ├── 53/
-    │   └── 2d/
-    │       └── 532deabf...  # SHA256 filename
+    │   └── 532deabf...  # SHA256 filename
     ├── 8c/
-    │   └── 76/
-    │       └── 8c7654ec...
+    │   └── 8c7654ec...
     └── ...
 ```
 
@@ -95,6 +92,5 @@ go install go.etcd.io/bbolt/cmd/bbolt@latest
 ## Notes
 
 - The tool processes files sequentially
-- Memory usage scales with photo file sizes
 - Database directory is created if it doesn't exist
 - Existing photos are overwritten without warning

@@ -73,17 +73,16 @@ func (d *DBBuilder) generateFilename(catID, photoID uint64) string {
 
 func (d *DBBuilder) getPhotoPath(catID, photoID uint64) string {
 	filename := d.generateFilename(catID, photoID)
-	
+
 	xx := filename[:2]
-	yy := filename[2:4]
-	
-	dir := filepath.Join(d.dataPath, xx, yy)
+
+	dir := filepath.Join(d.dataPath, xx)
 	return filepath.Join(dir, filename)
 }
 
 func (d *DBBuilder) AddPhoto(catID, photoID uint64, photoData []byte) error {
 	key := d.generateKey(catID, photoID)
-	
+
 	err := d.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(metaBucket))
 		return bucket.Put(key, []byte{})
@@ -93,7 +92,7 @@ func (d *DBBuilder) AddPhoto(catID, photoID uint64, photoData []byte) error {
 	}
 
 	photoPath := d.getPhotoPath(catID, photoID)
-	
+
 	if err := os.MkdirAll(filepath.Dir(photoPath), 0755); err != nil {
 		return fmt.Errorf("failed to create photo directory: %w", err)
 	}
