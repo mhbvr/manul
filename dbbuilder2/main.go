@@ -111,10 +111,11 @@ func main() {
 				PhotoData: photoData,
 			})
 
-			fmt.Printf("  Added photo: cat_id=%d, photo_id=%d, size=%d bytes\n", 
+			fmt.Printf("  Added photo: cat_id=%d, photo_id=%d, size=%d bytes\n",
 				catID, photoID, len(photoData))
 		}
 
+		fmt.Printf("Writing batch to DB %d/%d (%d photos)\n", batchNum, totalBatches, len(batchPaths))
 		if err := builder.AddPhotosBatch(batch); err != nil {
 			log.Fatalf("Failed to process batch %d: %v", batchNum, err)
 		}

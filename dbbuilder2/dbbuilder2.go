@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -11,7 +10,7 @@ import (
 )
 
 const (
-	metaBucket  = "cat_photos"
+	metaBucket  = "meta"
 	photoBucket = "photos"
 )
 
@@ -57,24 +56,17 @@ func (d *DBBuilder2) generateKey(catID, photoID uint64) []byte {
 	return key
 }
 
-func (d *DBBuilder2) generatePhotoKey(catID, photoID uint64) []byte {
-	key := d.generateKey(catID, photoID)
-	hash := sha256.Sum256(key)
-	return hash[:]
-}
-
 func (d *DBBuilder2) AddPhoto(catID, photoID uint64, photoData []byte) error {
-	metaKey := d.generateKey(catID, photoID)
-	photoKey := d.generatePhotoKey(catID, photoID)
-	
+	key := d.generateKey(catID, photoID)
+
 	return d.db.Update(func(tx *bolt.Tx) error {
 		metaBucket := tx.Bucket([]byte(metaBucket))
-		if err := metaBucket.Put(metaKey, []byte{}); err != nil {
+		if err := metaBucket.Put(key, []byte{}); err != nil {
 			return fmt.Errorf("failed to update meta bucket: %w", err)
 		}
 
 		photoBucket := tx.Bucket([]byte(photoBucket))
-		if err := photoBucket.Put(photoKey, photoData); err != nil {
+		if err := photoBucket.Put(key, photoData); err != nil {
 			return fmt.Errorf("failed to update photo bucket: %w", err)
 		}
 
@@ -95,14 +87,13 @@ func (d *DBBuilder2) AddPhotosBatch(photos []PhotoItem) error {
 		photoBucket := tx.Bucket([]byte(photoBucket))
 
 		for _, photo := range photos {
-			metaKey := d.generateKey(photo.CatID, photo.PhotoID)
-			photoKey := d.generatePhotoKey(photo.CatID, photo.PhotoID)
+			key := d.generateKey(photo.CatID, photo.PhotoID)
 
-			if err := metaBucket.Put(metaKey, []byte{}); err != nil {
+			if err := metaBucket.Put(key, []byte{}); err != nil {
 				return fmt.Errorf("failed to update meta bucket for cat_id=%d, photo_id=%d: %w", photo.CatID, photo.PhotoID, err)
 			}
 
-			if err := photoBucket.Put(photoKey, photo.PhotoData); err != nil {
+			if err := photoBucket.Put(key, photo.PhotoData); err != nil {
 				return fmt.Errorf("failed to update photo bucket for cat_id=%d, photo_id=%d: %w", photo.CatID, photo.PhotoID, err)
 			}
 		}
