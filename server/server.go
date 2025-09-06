@@ -7,6 +7,7 @@ import (
 	"github.com/mhbvr/manul"
 	"github.com/mhbvr/manul/db/bolt"
 	"github.com/mhbvr/manul/db/filetree"
+	"github.com/mhbvr/manul/db/pebble"
 	pb "github.com/mhbvr/manul/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -26,8 +27,10 @@ func NewCatPhotosServer(dbPath, dbType string) (*CatPhotosServer, error) {
 		dbReader, err = filetree.NewReader(dbPath)
 	case "bolt":
 		dbReader, err = bolt.NewReader(dbPath)
+	case "pebble":
+		dbReader, err = pebble.NewReader(dbPath)
 	default:
-		return nil, fmt.Errorf("unknown database type: %s (must be 'filetree' or 'bolt')", dbType)
+		return nil, fmt.Errorf("unknown database type: %s (must be 'filetree', 'bolt', or 'pebble')", dbType)
 	}
 
 	if err != nil {

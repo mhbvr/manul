@@ -11,12 +11,13 @@ import (
 	"github.com/mhbvr/manul"
 	"github.com/mhbvr/manul/db/bolt"
 	"github.com/mhbvr/manul/db/filetree"
+	"github.com/mhbvr/manul/db/pebble"
 )
 
 func main() {
 	var (
-		dbType    = flag.String("type", "filetree", "Database type: filetree or bolt")
-		dbPath    = flag.String("db", "", "Database path (directory for filetree, file for bolt)")
+		dbType    = flag.String("type", "filetree", "Database type: filetree, bolt, or pebble")
+		dbPath    = flag.String("db", "", "Database path (directory for filetree, file for bolt/pebble)")
 		srcDir    = flag.String("src", "", "Source directory containing photo files")
 		batchSize = flag.Int("batch-size", 100, "Number of photos to process in each transaction")
 	)
@@ -38,8 +39,10 @@ func main() {
 		writer, err = filetree.New(*dbPath)
 	case "bolt":
 		writer, err = bolt.New(*dbPath)
+	case "pebble":
+		writer, err = pebble.New(*dbPath)
 	default:
-		log.Fatalf("Unknown database type: %s (must be 'filetree' or 'bolt')", *dbType)
+		log.Fatalf("Unknown database type: %s (must be 'filetree', 'bolt', or 'pebble')", *dbType)
 	}
 
 	if err != nil {
@@ -137,14 +140,14 @@ func main() {
 	fmt.Printf("  Files processed: %d\n", processedFiles)
 	fmt.Printf("  Files skipped: %d\n", skippedFiles)
 
-	// Show database size
-	if *dbType == "bolt" {
+	// Show database size/info
+	switch *dbType {
+	case "filetree":
+		fmt.Printf("  Database created in directory: %s\n", *dbPath)
+	case "bolt", "pebble":
 		if stat, err := os.Stat(*dbPath); err == nil {
 			fmt.Printf("  Database size: %d bytes\n", stat.Size())
 		}
-	} else {
-		// For filetree, show directory size
-		fmt.Printf("  Database created in directory: %s\n", *dbPath)
 	}
 }
 

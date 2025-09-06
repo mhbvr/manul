@@ -13,8 +13,8 @@ import (
 var (
 	host   = flag.String("host", "localhost", "Server host")
 	port   = flag.Int("port", 8081, "Server port")
-	dbPath = flag.String("db", "", "Database path (directory for filetree, file for bolt)")
-	dbType = flag.String("db-type", "filetree", "Database type: filetree or bolt")
+	dbPath = flag.String("db", "", "Database path (directory for filetree, file for bolt/pebble)")
+	dbType = flag.String("db-type", "filetree", "Database type: filetree, bolt, or pebble")
 )
 
 func main() {
