@@ -24,7 +24,7 @@ type FileTreeDB struct {
 	db       *bolt.DB
 }
 
-// New creates a new FileTreeDB
+// New creates a new FileTreeDB for writing
 func New(dbDir string) (*FileTreeDB, error) {
 	metaPath := filepath.Join(dbDir, metaFile)
 	dataPath := filepath.Join(dbDir, dataDir)
@@ -136,4 +136,114 @@ func (w *FileTreeDB) AddPhotosBatch(photos []manul.PhotoItem) error {
 	}
 
 	return nil
+}
+
+func (w *FileTreeDB) parseKey(key []byte) (catID, photoID uint64) {
+	if len(key) != 16 {
+		return 0, 0
+	}
+	catID = binary.BigEndian.Uint64(key[:8])
+	photoID = binary.BigEndian.Uint64(key[8:])
+	return catID, photoID
+}
+
+func (w *FileTreeDB) GetAllCatIDs() ([]uint64, error) {
+	catIdsMap := make(map[uint64]bool)
+
+	err := w.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(metaBucket))
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", metaBucket)
+		}
+
+		cursor := bucket.Cursor()
+		for key, _ := cursor.First(); key != nil; key, _ = cursor.Next() {
+			catID, _ := w.parseKey(key)
+			catIdsMap[catID] = true
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	var catIds []uint64
+	for catID := range catIdsMap {
+		catIds = append(catIds, catID)
+	}
+
+	return catIds, nil
+}
+
+func (w *FileTreeDB) GetPhotoIDs(catID uint64) ([]uint64, error) {
+	var photoIds []uint64
+
+	err := w.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(metaBucket))
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", metaBucket)
+		}
+
+		cursor := bucket.Cursor()
+		for key, _ := cursor.First(); key != nil; key, _ = cursor.Next() {
+			keyCatID, photoID := w.parseKey(key)
+			if keyCatID == catID {
+				photoIds = append(photoIds, photoID)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return photoIds, nil
+}
+
+func (w *FileTreeDB) GetPhotoData(catID, photoID uint64) ([]byte, error) {
+	key := w.generateKey(catID, photoID)
+
+	err := w.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(metaBucket))
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", metaBucket)
+		}
+
+		value := bucket.Get(key)
+		if value == nil {
+			return fmt.Errorf("photo with cat_id=%d, photo_id=%d not found in database", catID, photoID)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	photoPath := w.getPhotoPath(catID, photoID)
+	photoData, err := os.ReadFile(photoPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read photo file %s: %w", photoPath, err)
+	}
+
+	return photoData, nil
+}
+
+// NewReader creates a new FileTreeDB for reading (read-only mode)
+func NewReader(dbDir string) (*FileTreeDB, error) {
+	metaPath := filepath.Join(dbDir, metaFile)
+	dataPath := filepath.Join(dbDir, dataDir)
+
+	db, err := bolt.Open(metaPath, 0600, &bolt.Options{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open bbolt database: %w", err)
+	}
+
+	return &FileTreeDB{
+		metaPath: metaPath,
+		dataPath: dataPath,
+		db:       db,
+	}, nil
 }

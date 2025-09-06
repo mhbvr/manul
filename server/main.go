@@ -11,16 +11,17 @@ import (
 )
 
 var (
-	host  = flag.String("host", "localhost", "Server host")
-	port  = flag.Int("port", 8081, "Server port")
-	dbDir = flag.String("db", "", "Database directory path")
+	host   = flag.String("host", "localhost", "Server host")
+	port   = flag.Int("port", 8081, "Server port")
+	dbPath = flag.String("db", "", "Database path (directory for filetree, file for bolt)")
+	dbType = flag.String("db-type", "filetree", "Database type: filetree or bolt")
 )
 
 func main() {
 	flag.Parse()
 	
-	if *dbDir == "" {
-		log.Fatal("Database directory must be specified with -db flag")
+	if *dbPath == "" {
+		log.Fatal("Database path must be specified with -db flag")
 	}
 	
 	addr := fmt.Sprintf("%s:%d", *host, *port)
@@ -30,7 +31,7 @@ func main() {
 	}
 
 	s := grpc.NewServer()
-	catPhotosServer, err := NewCatPhotosServer(*dbDir)
+	catPhotosServer, err := NewCatPhotosServer(*dbPath, *dbType)
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
 	}
@@ -38,7 +39,7 @@ func main() {
 	
 	pb.RegisterCatPhotosServiceServer(s, catPhotosServer)
 
-	log.Printf("gRPC server listening on %s (using database: %s)", addr, *dbDir)
+	log.Printf("gRPC server listening on %s (using %s database: %s)", addr, *dbType, *dbPath)
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}

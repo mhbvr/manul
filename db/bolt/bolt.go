@@ -93,3 +93,106 @@ func (w *BoltDB) AddPhotosBatch(photos []manul.PhotoItem) error {
 		return nil
 	})
 }
+
+func (w *BoltDB) parseKey(key []byte) (catID, photoID uint64) {
+	if len(key) != 16 {
+		return 0, 0
+	}
+	catID = binary.BigEndian.Uint64(key[:8])
+	photoID = binary.BigEndian.Uint64(key[8:])
+	return catID, photoID
+}
+
+func (w *BoltDB) GetAllCatIDs() ([]uint64, error) {
+	catIdsMap := make(map[uint64]bool)
+
+	err := w.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(metaBucket))
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", metaBucket)
+		}
+
+		cursor := bucket.Cursor()
+		for key, _ := cursor.First(); key != nil; key, _ = cursor.Next() {
+			catID, _ := w.parseKey(key)
+			catIdsMap[catID] = true
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	var catIds []uint64
+	for catID := range catIdsMap {
+		catIds = append(catIds, catID)
+	}
+
+	return catIds, nil
+}
+
+func (w *BoltDB) GetPhotoIDs(catID uint64) ([]uint64, error) {
+	var photoIds []uint64
+
+	err := w.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(metaBucket))
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", metaBucket)
+		}
+
+		cursor := bucket.Cursor()
+		for key, _ := cursor.First(); key != nil; key, _ = cursor.Next() {
+			keyCatID, photoID := w.parseKey(key)
+			if keyCatID == catID {
+				photoIds = append(photoIds, photoID)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return photoIds, nil
+}
+
+func (w *BoltDB) GetPhotoData(catID, photoID uint64) ([]byte, error) {
+	key := w.generateKey(catID, photoID)
+	var photoData []byte
+
+	err := w.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(photoBucket))
+		if bucket == nil {
+			return fmt.Errorf("bucket %s not found", photoBucket)
+		}
+
+		data := bucket.Get(key)
+		if data == nil {
+			return fmt.Errorf("photo with cat_id=%d, photo_id=%d not found in database", catID, photoID)
+		}
+		
+		photoData = make([]byte, len(data))
+		copy(photoData, data)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return photoData, nil
+}
+
+// NewReader creates a new BoltDB for reading (read-only mode)
+func NewReader(dbPath string) (*BoltDB, error) {
+	db, err := bolt.Open(dbPath, 0600, &bolt.Options{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open bbolt database: %w", err)
+	}
+
+	return &BoltDB{
+		db: db,
+	}, nil
+}

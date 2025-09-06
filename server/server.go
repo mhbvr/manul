@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/mhbvr/manul"
+	"github.com/mhbvr/manul/db/bolt"
+	"github.com/mhbvr/manul/db/filetree"
 	pb "github.com/mhbvr/manul/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -10,11 +14,22 @@ import (
 
 type CatPhotosServer struct {
 	pb.UnimplementedCatPhotosServiceServer
-	dbReader *DBReader
+	dbReader manul.DBReader
 }
 
-func NewCatPhotosServer(dbDir string) (*CatPhotosServer, error) {
-	dbReader, err := NewDBReader(dbDir)
+func NewCatPhotosServer(dbPath, dbType string) (*CatPhotosServer, error) {
+	var dbReader manul.DBReader
+	var err error
+
+	switch dbType {
+	case "filetree":
+		dbReader, err = filetree.NewReader(dbPath)
+	case "bolt":
+		dbReader, err = bolt.NewReader(dbPath)
+	default:
+		return nil, fmt.Errorf("unknown database type: %s (must be 'filetree' or 'bolt')", dbType)
+	}
+
 	if err != nil {
 		return nil, err
 	}
