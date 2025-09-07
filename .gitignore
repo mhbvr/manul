@@ -36,5 +36,6 @@ go.work.sum
 server/server
 client/client
 client_web/client_web
+client_loadtest/client_loadtest
 dbcreator/dbcreator
 
