@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pb "github.com/mhbvr/manul/proto"
+	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -26,17 +27,10 @@ type LoadTester struct {
 	catIDs       []uint64
 	photosByCat  map[uint64][]uint64
 	
-	stats       *Stats
+	metrics     *Metrics
+	startTime   time.Time
 	ctx         context.Context
 	cancel      context.CancelFunc
-}
-
-type Stats struct {
-	mu            sync.RWMutex
-	totalRequests int64
-	successCount  int64
-	errorCount    int64
-	startTime     time.Time
 }
 
 type Option func(*LoadTester)
@@ -82,9 +76,8 @@ func NewLoadTester(opts ...Option) *LoadTester {
 		serverAddr:  "localhost:8081",
 		maxInflight: 10,
 		photosByCat: make(map[uint64][]uint64),
-		stats: &Stats{
-			startTime: time.Now(),
-		},
+		startTime:   time.Now(),
+		metrics:     NewMetrics(),
 	}
 	
 	for _, opt := range opts {
@@ -136,9 +129,8 @@ func NewLoadTesterWithConfig(serverAddr string, maxInflight, inflight int, mode 
 		serverAddr:  serverAddr,
 		maxInflight: maxInflight,
 		photosByCat: make(map[uint64][]uint64),
-		stats: &Stats{
-			startTime: time.Now(),
-		},
+		startTime:   time.Now(),
+		metrics:     NewMetrics(),
 	}
 	
 	if err := lt.connect(); err != nil {
@@ -177,12 +169,12 @@ func NewLoadTesterWithConfig(serverAddr string, maxInflight, inflight int, mode 
 
 func (lt *LoadTester) createJobFunc() func(context.Context) error {
 	return func(ctx context.Context) error {
+		start := time.Now()
+		
 		catID, photoID, err := lt.getRandomCatPhoto()
 		if err != nil {
-			lt.stats.mu.Lock()
-			lt.stats.totalRequests++
-			lt.stats.errorCount++
-			lt.stats.mu.Unlock()
+			duration := time.Since(start).Seconds()
+			lt.metrics.RecordRequest(duration, false)
 			return err
 		}
 		
@@ -191,14 +183,9 @@ func (lt *LoadTester) createJobFunc() func(context.Context) error {
 			PhotoId: photoID,
 		})
 		
-		lt.stats.mu.Lock()
-		lt.stats.totalRequests++
-		if err != nil {
-			lt.stats.errorCount++
-		} else {
-			lt.stats.successCount++
-		}
-		lt.stats.mu.Unlock()
+		duration := time.Since(start).Seconds()
+		success := err == nil
+		lt.metrics.RecordRequest(duration, success)
 		
 		return err
 	}
@@ -329,14 +316,34 @@ func (lt *LoadTester) SetTimeout(timeout time.Duration) error {
 }
 
 func (lt *LoadTester) GetStats() (int64, int64, int64, float64) {
-	lt.stats.mu.RLock()
-	defer lt.stats.mu.RUnlock()
+	// Extract metrics from Prometheus counters
+	successMetric, _ := lt.metrics.ResponseCounter.GetMetricWithLabelValues("success")
+	errorMetric, _ := lt.metrics.ResponseCounter.GetMetricWithLabelValues("error")
 	
-	duration := time.Since(lt.stats.startTime).Seconds()
-	if duration == 0 {
-		return lt.stats.totalRequests, lt.stats.successCount, lt.stats.errorCount, 0
+	var successCount, errorCount int64
+	
+	// Get current values from Prometheus metrics
+	if successMetric != nil {
+		pb := &dto.Metric{}
+		successMetric.Write(pb)
+		successCount = int64(pb.GetCounter().GetValue())
 	}
-	return lt.stats.totalRequests, lt.stats.successCount, lt.stats.errorCount, float64(lt.stats.totalRequests) / duration
+	
+	if errorMetric != nil {
+		pb := &dto.Metric{}
+		errorMetric.Write(pb)
+		errorCount = int64(pb.GetCounter().GetValue())
+	}
+	
+	totalRequests := successCount + errorCount
+	
+	duration := time.Since(lt.startTime).Seconds()
+	var currentRPS float64
+	if duration > 0 {
+		currentRPS = float64(totalRequests) / duration
+	}
+	
+	return totalRequests, successCount, errorCount, currentRPS
 }
 
 func (lt *LoadTester) GetConfig() (string, int, string, float64, time.Duration, error) {

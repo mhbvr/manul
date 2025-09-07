@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type WebHandler struct {
@@ -34,6 +36,8 @@ func (wh *WebHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		wh.handleIndex(w, r)
 	case "/update":
 		wh.handleUpdate(w, r)
+	case "/metrics":
+		promhttp.Handler().ServeHTTP(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -160,7 +164,7 @@ const indexTemplate = `
                 <tr><th>Failed Requests</th><td>{{.ErrorReq}}</td></tr>
                 <tr><th>Current RPS</th><td>{{printf "%.2f" .CurrentRPS}}</td></tr>
             </table>
-            <p><a href="/" class="refresh-link">Refresh Now</a></p>
+            <p><a href="/" class="refresh-link">Refresh Now</a> | <a href="/metrics" class="refresh-link">Prometheus Metrics</a></p>
         </div>
         
         <div class="section controls">
