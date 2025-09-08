@@ -9,7 +9,7 @@ import (
 type Metrics struct {
 	// Response counter by success/error status
 	ResponseCounter *prometheus.CounterVec
-	
+
 	// Request latency histogram
 	RequestLatency *prometheus.HistogramVec
 }
@@ -24,7 +24,7 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"status"}, // "success" or "error"
 		),
-		
+
 		RequestLatency: promauto.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name: "loadtester_request_duration_seconds",
@@ -40,11 +40,11 @@ func NewMetrics() *Metrics {
 
 // RecordRequest records a completed request with its latency and status
 func (m *Metrics) RecordRequest(durationSeconds float64, success bool) {
-	status := "success"
+	status := "ok"
 	if !success {
 		status = "error"
 	}
-	
+
 	m.ResponseCounter.WithLabelValues(status).Inc()
 	m.RequestLatency.WithLabelValues(status).Observe(durationSeconds)
 }

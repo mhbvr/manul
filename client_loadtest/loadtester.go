@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"math/rand"
 	"sync"
@@ -18,144 +19,53 @@ type LoadTester struct {
 	mu          sync.RWMutex
 	serverAddr  string
 	maxInflight int
-	
-	client      pb.CatPhotosServiceClient
-	conn        *grpc.ClientConn
-	runner      *Runner
-	
+	runnerCfg   *RunnerConfig
+
+	client pb.CatPhotosServiceClient
+	conn   *grpc.ClientConn
+	runner *Runner
+	fg     *RunnerConfig
+
 	// Available cat/photo IDs fetched from server
-	catIDs       []uint64
-	photosByCat  map[uint64][]uint64
-	
-	metrics     *Metrics
-	startTime   time.Time
-	ctx         context.Context
-	cancel      context.CancelFunc
+	catIDs      []uint64
+	photosByCat map[uint64][]uint64
+
+	metrics   *Metrics
+	startTime time.Time
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
-type Option func(*LoadTester)
+func NewLoadTester(serverAddr string, maxInflight int, cfg *RunnerConfig) (*LoadTester, error) {
+	// Default runner configuration
+	if cfg == nil {
+		return nil, fmt.Errorf("incorrect configuration: %v", *cfg)
+	}
 
-func WithServerAddr(addr string) Option {
-	return func(lt *LoadTester) {
-		lt.serverAddr = addr
-	}
-}
-
-func WithMaxInflight(maxInflight int) Option {
-	return func(lt *LoadTester) {
-		lt.maxInflight = maxInflight
-	}
-}
-
-func WithInflight(inflight int) Option {
-	return func(lt *LoadTester) {
-		// This will be passed to Runner config
-	}
-}
-
-func WithMode(mode string) Option {
-	return func(lt *LoadTester) {
-		// This will be passed to Runner config
-	}
-}
-
-func WithRPS(rps float64) Option {
-	return func(lt *LoadTester) {
-		// This will be passed to Runner config
-	}
-}
-
-func WithTimeout(timeout time.Duration) Option {
-	return func(lt *LoadTester) {
-		// This will be passed to Runner config
-	}
-}
-
-func NewLoadTester(opts ...Option) *LoadTester {
-	lt := &LoadTester{
-		serverAddr:  "localhost:8081",
-		maxInflight: 10,
-		photosByCat: make(map[uint64][]uint64),
-		startTime:   time.Now(),
-		metrics:     NewMetrics(),
-	}
-	
-	for _, opt := range opts {
-		opt(lt)
-	}
-	
-	if err := lt.connect(); err != nil {
-		log.Fatalf("Failed to connect to server: %v", err)
-	}
-	
-	if err := lt.fetchAvailableIDs(); err != nil {
-		log.Fatalf("Failed to fetch available IDs: %v", err)
-	}
-	
-	// Extract parameters from command line flags for initial config
-	var inflight int = 5
-	var mode string = "asap"
-	var rps float64 = 1.0
-	var timeout time.Duration = 10 * time.Second
-	
-	// Create initial Runner config
-	runnerConfig := &RunnerConfig{
-		Inflight: inflight,
-		Mode:     mode,
-		Rps:      rps,
-		Timeout:  timeout,
-	}
-	
-	// Create Runner with job function
-	var err error
-	lt.runner, err = NewRunner(runnerConfig, lt.createJobFunc(), lt.maxInflight)
-	if err != nil {
-		log.Fatalf("Failed to create runner: %v", err)
-	}
-	
-	// Start the runner
-	lt.ctx, lt.cancel = context.WithCancel(context.Background())
-	go func() {
-		if err := lt.runner.Run(lt.ctx); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("Runner stopped with error: %v", err)
-		}
-	}()
-	
-	return lt
-}
-
-func NewLoadTesterWithConfig(serverAddr string, maxInflight, inflight int, mode string, rps float64, timeout time.Duration) *LoadTester {
 	lt := &LoadTester{
 		serverAddr:  serverAddr,
 		maxInflight: maxInflight,
+		runnerCfg:   cfg,
 		photosByCat: make(map[uint64][]uint64),
 		startTime:   time.Now(),
 		metrics:     NewMetrics(),
 	}
-	
+
 	if err := lt.connect(); err != nil {
-		log.Fatalf("Failed to connect to server: %v", err)
+		return nil, fmt.Errorf("failed to connect to server %v: %v", serverAddr, err)
 	}
-	
+
 	if err := lt.fetchAvailableIDs(); err != nil {
-		log.Fatalf("Failed to fetch available IDs: %v", err)
+		return nil, fmt.Errorf("failed to fetch available cats and photos IDs: %v", err)
 	}
-	
-	// Create initial Runner config
-	runnerConfig := &RunnerConfig{
-		Inflight: inflight,
-		Mode:     mode,
-		Rps:      rps,
-		Timeout:  timeout,
-	}
-	
+
 	// Create Runner with job function
 	var err error
-	lt.runner, err = NewRunner(runnerConfig, lt.createJobFunc(), lt.maxInflight)
+	lt.runner, err = NewRunner(cfg, lt.createJobFunc(), lt.maxInflight)
 	if err != nil {
-		log.Fatalf("Failed to create runner: %v", err)
+		return nil, fmt.Errorf("failed to create runner: %v", err)
 	}
-	
+
 	// Start the runner
 	lt.ctx, lt.cancel = context.WithCancel(context.Background())
 	go func() {
@@ -163,30 +73,30 @@ func NewLoadTesterWithConfig(serverAddr string, maxInflight, inflight int, mode 
 			log.Printf("Runner stopped with error: %v", err)
 		}
 	}()
-	
-	return lt
+
+	return lt, nil
 }
 
 func (lt *LoadTester) createJobFunc() func(context.Context) error {
 	return func(ctx context.Context) error {
 		start := time.Now()
-		
+
 		catID, photoID, err := lt.getRandomCatPhoto()
 		if err != nil {
 			duration := time.Since(start).Seconds()
 			lt.metrics.RecordRequest(duration, false)
 			return err
 		}
-		
+
 		_, err = lt.client.GetPhoto(ctx, &pb.GetPhotoRequest{
 			CatId:   catID,
 			PhotoId: photoID,
 		})
-		
+
 		duration := time.Since(start).Seconds()
 		success := err == nil
 		lt.metrics.RecordRequest(duration, success)
-		
+
 		return err
 	}
 }
@@ -204,15 +114,15 @@ func (lt *LoadTester) connect() error {
 func (lt *LoadTester) fetchAvailableIDs() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	// Get all cat IDs
 	catsResp, err := lt.client.ListCats(ctx, &pb.ListCatsRequest{})
 	if err != nil {
 		return err
 	}
 	lt.catIDs = catsResp.CatIds
-	log.Printf("Found %d cats: %v", len(lt.catIDs), lt.catIDs)
-	
+	log.Printf("Found %d cats.", len(lt.catIDs))
+
 	// Get photo IDs for each cat
 	for _, catID := range lt.catIDs {
 		photosResp, err := lt.client.ListPhotos(ctx, &pb.ListPhotosRequest{CatId: catID})
@@ -221,158 +131,92 @@ func (lt *LoadTester) fetchAvailableIDs() error {
 			continue
 		}
 		lt.photosByCat[catID] = photosResp.PhotoIds
-		log.Printf("Cat %d has %d photos: %v", catID, len(photosResp.PhotoIds), photosResp.PhotoIds)
+		log.Printf("Cat %d has %d photos.", catID, len(photosResp.PhotoIds))
 	}
-	
+
 	return nil
 }
 
-func (lt *LoadTester) SetInflight(inflight int) error {
-	if lt.runner == nil {
-		return errors.New("runner not initialized")
-	}
-	
-	// Get current config
-	currentCfg, err := lt.runner.GetConfig(context.Background())
-	if err != nil {
-		return err
-	}
-	
-	// Update only the inflight value
-	newCfg := &RunnerConfig{
-		Inflight: inflight,
-		Mode:     currentCfg.Mode,
-		Rps:      currentCfg.Rps,
-		Timeout:  currentCfg.Timeout,
-	}
-	
-	return lt.runner.SetConfig(context.Background(), newCfg)
+func (lt *LoadTester) SetConfig(ctx context.Context, cfg *RunnerConfig) error {
+	return lt.runner.SetConfig(ctx, cfg)
 }
 
-func (lt *LoadTester) SetMode(mode string) error {
-	if lt.runner == nil {
-		return errors.New("runner not initialized")
-	}
-	
-	// Get current config
-	currentCfg, err := lt.runner.GetConfig(context.Background())
-	if err != nil {
-		return err
-	}
-	
-	// Update only the mode value
-	newCfg := &RunnerConfig{
-		Inflight: currentCfg.Inflight,
-		Mode:     mode,
-		Rps:      currentCfg.Rps,
-		Timeout:  currentCfg.Timeout,
-	}
-	
-	return lt.runner.SetConfig(context.Background(), newCfg)
+type RunnerInfo struct {
+	RunnerCfg   *RunnerConfig
+	StartTime   time.Time
+	OkRequests  int
+	ErrRequests int
 }
 
-func (lt *LoadTester) SetRPS(rps float64) error {
+func (lt *LoadTester) GetInfo(ctx context.Context) (*RunnerInfo, error) {
 	if lt.runner == nil {
-		return errors.New("runner not initialized")
+		return nil, errors.New("runner not initialized")
 	}
-	
-	// Get current config
-	currentCfg, err := lt.runner.GetConfig(context.Background())
-	if err != nil {
-		return err
-	}
-	
-	// Update only the RPS value
-	newCfg := &RunnerConfig{
-		Inflight: currentCfg.Inflight,
-		Mode:     currentCfg.Mode,
-		Rps:      rps,
-		Timeout:  currentCfg.Timeout,
-	}
-	
-	return lt.runner.SetConfig(context.Background(), newCfg)
-}
 
-func (lt *LoadTester) SetTimeout(timeout time.Duration) error {
-	if lt.runner == nil {
-		return errors.New("runner not initialized")
-	}
-	
-	// Get current config
-	currentCfg, err := lt.runner.GetConfig(context.Background())
+	cfg, err := lt.runner.GetConfig(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	
-	// Update only the timeout value
-	newCfg := &RunnerConfig{
-		Inflight: currentCfg.Inflight,
-		Mode:     currentCfg.Mode,
-		Rps:      currentCfg.Rps,
-		Timeout:  timeout,
-	}
-	
-	return lt.runner.SetConfig(context.Background(), newCfg)
-}
 
-func (lt *LoadTester) GetStats() (int64, int64, int64, float64) {
 	// Extract metrics from Prometheus counters
-	successMetric, _ := lt.metrics.ResponseCounter.GetMetricWithLabelValues("success")
+	var successCount, errorCount int
+	successMetric, err := lt.metrics.ResponseCounter.GetMetricWithLabelValues("ok")
+	if err != nil {
+		return nil, err
+	}
 	errorMetric, _ := lt.metrics.ResponseCounter.GetMetricWithLabelValues("error")
-	
-	var successCount, errorCount int64
-	
+	if err != nil {
+		return nil, err
+	}
+
 	// Get current values from Prometheus metrics
 	if successMetric != nil {
 		pb := &dto.Metric{}
 		successMetric.Write(pb)
-		successCount = int64(pb.GetCounter().GetValue())
+		successCount = int(pb.GetCounter().GetValue())
 	}
-	
+
 	if errorMetric != nil {
 		pb := &dto.Metric{}
 		errorMetric.Write(pb)
-		errorCount = int64(pb.GetCounter().GetValue())
+		errorCount = int(pb.GetCounter().GetValue())
 	}
-	
-	totalRequests := successCount + errorCount
-	
-	duration := time.Since(lt.startTime).Seconds()
-	var currentRPS float64
-	if duration > 0 {
-		currentRPS = float64(totalRequests) / duration
-	}
-	
-	return totalRequests, successCount, errorCount, currentRPS
+
+	return &RunnerInfo{
+		RunnerCfg:   cfg,
+		StartTime:   lt.startTime,
+		OkRequests:  successCount,
+		ErrRequests: errorCount,
+	}, nil
 }
 
-func (lt *LoadTester) GetConfig() (string, int, string, float64, time.Duration, error) {
+func (lt *LoadTester) GetConfig(ctx context.Context) (*RunnerConfig, error) {
 	if lt.runner == nil {
-		return lt.serverAddr, 0, "", 0, 0, errors.New("runner not initialized")
+		return nil, errors.New("runner not initialized")
 	}
-	
-	cfg, err := lt.runner.GetConfig(context.Background())
+
+	cfg, err := lt.runner.GetConfig(ctx)
 	if err != nil {
-		return lt.serverAddr, 0, "", 0, 0, err
+		return nil, err
 	}
-	
-	return lt.serverAddr, cfg.Inflight, cfg.Mode, cfg.Rps, cfg.Timeout, nil
+
+	return cfg, nil
 }
 
 func (lt *LoadTester) getRandomCatPhoto() (uint64, uint64, error) {
 	if len(lt.catIDs) == 0 {
 		return 0, 0, errors.New("no cats available")
 	}
-	
+
 	// Pick random cat
 	catID := lt.catIDs[rand.Intn(len(lt.catIDs))]
-	
+
 	// Pick random photo for that cat
 	photos := lt.photosByCat[catID]
 	if len(photos) == 0 {
 		return 0, 0, errors.New("no photos available for selected cat")
 	}
-	
+
 	photoID := photos[rand.Intn(len(photos))]
 	return catID, photoID, nil
 }
