@@ -39,7 +39,7 @@ func NewMetrics() *Metrics {
 }
 
 // RecordRequest records a completed request with its latency and status
-func (m *Metrics) RecordRequest(durationSeconds float64, success bool, runnerID string) {
+func (m *Metrics) RecordRequest(runnerID string, durationSeconds float64, success bool) {
 	status := "ok"
 	if !success {
 		status = "error"

@@ -30,7 +30,9 @@ func NewWebHandler(loadTester *LoadTester) *WebHandler {
 func (wh *WebHandler) HttpMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", wh.handleIndex)
-	mux.HandleFunc("POST /update", wh.handleUpdate)
+	mux.HandleFunc("POST /add-runner", wh.handleAddRunner)
+	mux.HandleFunc("POST /remove-runner", wh.handleRemoveRunner)
+	mux.HandleFunc("POST /update-runner", wh.handleUpdateRunner)
 	mux.Handle("GET /metrics", promhttp.Handler())
 	return mux
 }
@@ -42,22 +44,14 @@ func (wh *WebHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	config, err := wh.loadTester.GetConfig(r.Context())
-	if err != nil {
-		http.Error(w, "Failed to get loadtester config: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
 	data := struct {
 		ServerAddr  string
 		MaxInFlight int
-		RunnerInfo  []*RunnerInfo
-		Config      *RunnerConfig
+		RunnerInfo  []*Status
 	}{
 		ServerAddr:  wh.loadTester.serverAddr,
 		MaxInFlight: wh.loadTester.maxInflight,
 		RunnerInfo:  info,
-		Config:      config,
 	}
 
 	w.Header().Set("Content-Type", "text/html")
@@ -67,7 +61,7 @@ func (wh *WebHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (wh *WebHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
+func (wh *WebHandler) handleAddRunner(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if err = r.ParseForm(); err != nil {
@@ -75,59 +69,115 @@ func (wh *WebHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg := &RunnerConfig{}
-
-	// Update inflight
+	// Parse inflight
+	var inFlight int = 1 // default
 	if inflightStr := r.FormValue("inflight"); inflightStr != "" {
-		if cfg.Inflight, err = strconv.Atoi(inflightStr); err != nil {
+		if inFlight, err = strconv.Atoi(inflightStr); err != nil {
 			http.Error(w, "Failed to parse inflight: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
 
-	cfg.Mode = r.FormValue("mode")
-	if cfg.Mode == "" {
-		http.Error(w, "mode is empty", http.StatusBadRequest)
-		return
+	// Parse mode
+	mode := r.FormValue("mode")
+	if mode == "" {
+		mode = "asap" // default
 	}
 
-	// Update RPS
-	if rpsStr := r.FormValue("rps"); rpsStr != "" {
-		if cfg.Rps, err = strconv.ParseFloat(rpsStr, 64); err != nil {
-			http.Error(w, "Failed to parse rps: "+err.Error(), http.StatusBadRequest)
+	// Parse QPS
+	var qps float64 = 1.0 // default
+	if qpsStr := r.FormValue("qps"); qpsStr != "" {
+		if qps, err = strconv.ParseFloat(qpsStr, 64); err != nil {
+			http.Error(w, "Failed to parse qps: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
 
-	// Update timeout
+	// Parse timeout
+	var timeout time.Duration = 10 * time.Second // default
 	if timeoutStr := r.FormValue("timeout"); timeoutStr != "" {
-		if cfg.Timeout, err = time.ParseDuration(timeoutStr); err != nil {
+		if timeout, err = time.ParseDuration(timeoutStr); err != nil {
 			http.Error(w, "Failed to parse timeout: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
 
-	// Update runner count
-	if runnerCountStr := r.FormValue("runner_count"); runnerCountStr != "" {
-		var runnerCount int
-		if runnerCount, err = strconv.Atoi(runnerCountStr); err != nil {
-			http.Error(w, "Failed to parse runner_count: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		if runnerCount <= 0 {
-			http.Error(w, "Runner count must be positive", http.StatusBadRequest)
-			return
-		}
-		err = wh.loadTester.SetRunnerCount(runnerCount)
-		if err != nil {
-			http.Error(w, "Failed to set runner count: "+err.Error(), http.StatusBadRequest)
+	if err := wh.loadTester.AddRunner(inFlight, qps, timeout, mode); err != nil {
+		http.Error(w, "Failed to add runner: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (wh *WebHandler) handleRemoveRunner(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Failed to parse form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	runnerID := r.FormValue("runner_id")
+	if runnerID == "" {
+		http.Error(w, "runner_id is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := wh.loadTester.RemoveRunner(runnerID); err != nil {
+		http.Error(w, "Failed to remove runner: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (wh *WebHandler) handleUpdateRunner(w http.ResponseWriter, r *http.Request) {
+	var err error
+
+	if err = r.ParseForm(); err != nil {
+		http.Error(w, "Failed to parse form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	runnerID := r.FormValue("runner_id")
+	if runnerID == "" {
+		http.Error(w, "runner_id is required", http.StatusBadRequest)
+		return
+	}
+
+	// Parse inflight
+	var inFlight int
+	if inflightStr := r.FormValue("inflight"); inflightStr != "" {
+		if inFlight, err = strconv.Atoi(inflightStr); err != nil {
+			http.Error(w, "Failed to parse inflight: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
 
-	err = wh.loadTester.SetConfig(r.Context(), cfg)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	// Parse mode
+	mode := r.FormValue("mode")
+	if mode == "" {
+		http.Error(w, "mode is empty", http.StatusBadRequest)
+		return
+	}
+
+	// Parse QPS
+	var qps float64
+	if qpsStr := r.FormValue("qps"); qpsStr != "" {
+		if qps, err = strconv.ParseFloat(qpsStr, 64); err != nil {
+			http.Error(w, "Failed to parse qps: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Parse timeout
+	var timeout time.Duration
+	if timeoutStr := r.FormValue("timeout"); timeoutStr != "" {
+		if timeout, err = time.ParseDuration(timeoutStr); err != nil {
+			http.Error(w, "Failed to parse timeout: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	if err := wh.loadTester.UpdateRunner(runnerID, inFlight, qps, timeout, mode); err != nil {
+		http.Error(w, "Failed to update runner: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -159,25 +209,77 @@ const indexTemplate = `
         <h1>Cat Photo Load Tester Control Panel</h1>
         
         <div class="section stats">
-            <h2>Runner Statistics ({{len .RunnerInfo}} active)</h2>
+            <h2>Runner Management ({{len .RunnerInfo}} active)</h2>
+            <div style="margin-bottom: 15px;">
+                <button type="button" onclick="showAddForm()">Add New Runner</button>
+            </div>
+            
+            <div class="section controls" id="add-form" style="display: none; margin-bottom: 20px;">
+                <h3>Add New Runner</h3>
+                <form method="post" action="/add-runner">
+                    <table>
+                        <tr>
+                            <th>Server Address</th>
+                            <td>{{.ServerAddr}} (read-only)</td>
+                        </tr>
+                        <tr>
+                            <th>In-Flight Requests</th>
+                            <td><input type="number" name="inflight" value="1" min="0" max="{{.MaxInFlight}}"></td>
+                        </tr>
+                        <tr>
+                            <th>Mode</th>
+                            <td>
+                                <select name="mode">
+                                    <option value="asap" selected>ASAP (Max Speed)</option>
+                                    <option value="static">Static Interval</option>
+                                    <option value="exponential">Exponential Distribution</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Target QPS</th>
+                            <td><input type="number" name="qps" value="1.0" min="0" step="0.1"></td>
+                        </tr>
+                        <tr>
+                            <th>Request Timeout</th>
+                            <td><input type="text" name="timeout" value="10s"></td>
+                        </tr>
+                    </table>
+                    <button type="submit">Create Runner</button>
+                    <button type="button" onclick="hideAddForm()">Cancel</button>
+                </form>
+            </div>
             <table>
                 <thead>
                     <tr>
                         <th>Runner ID</th>
                         <th>Start Time</th>
                         <th>In-Flight</th>
-                        <th>Successful Requests</th>
-                        <th>Failed Requests</th>
+                        <th>Mode</th>
+                        <th>QPS</th>
+                        <th>Timeout</th>
+                        <th>Successful</th>
+                        <th>Failed</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {{range .RunnerInfo}}
                     <tr>
-                        <td>{{.RunnerID}}</td>
-                        <td>{{.StartTime.Format "15:04:05"}}</td>
-                        <td>{{.RunnerCfg.Inflight}}</td>
+                        <td>{{.LoadRunnerInfo.Id}}</td>
+                        <td>{{.LoadRunnerInfo.StartTime.Format "15:04:05"}}</td>
+                        <td>{{.LoadRunnerInfo.WorkerCfg.InFlight}}</td>
+                        <td>{{.Mode}}</td>
+                        <td>{{.LoadRunnerInfo.WorkerCfg.Qps}}</td>
+                        <td>{{.LoadRunnerInfo.WorkerCfg.Timeout}}</td>
                         <td>{{.OkRequests}}</td>
                         <td>{{.ErrRequests}}</td>
+                        <td style="white-space: nowrap;">
+                            <button type="button" onclick="showEditForm('{{.LoadRunnerInfo.Id}}', {{.LoadRunnerInfo.WorkerCfg.InFlight}}, '{{.Mode}}', {{.LoadRunnerInfo.WorkerCfg.Qps}}, '{{.LoadRunnerInfo.WorkerCfg.Timeout}}')" style="margin-right: 10px;">Edit</button><button type="submit" form="remove-form-{{.LoadRunnerInfo.Id}}" onclick="return confirm('Remove runner {{.LoadRunnerInfo.Id}}?')">Remove</button>
+                            <form id="remove-form-{{.LoadRunnerInfo.Id}}" method="post" action="/remove-runner" style="display: none;">
+                                <input type="hidden" name="runner_id" value="{{.LoadRunnerInfo.Id}}">
+                            </form>
+                        </td>
                     </tr>
                     {{end}}
                 </tbody>
@@ -185,58 +287,90 @@ const indexTemplate = `
             <p><a href="/" class="refresh-link">Refresh Now</a> | <a href="/metrics" class="refresh-link">Prometheus Metrics</a></p>
         </div>
         
-        <div class="section controls">
-            <h2>Configuration</h2>
-            <form method="post" action="/update">
+        <div class="section controls" id="edit-form" style="display: none;">
+            <h2>Edit Runner Configuration</h2>
+            <form method="post" action="/update-runner">
+                <input type="hidden" id="edit-runner-id" name="runner_id" value="">
                 <table>
+                    <tr>
+                        <th>Runner ID</th>
+                        <td id="edit-runner-display"></td>
+                    </tr>
                     <tr>
                         <th>Server Address</th>
                         <td>{{.ServerAddr}} (read-only)</td>
                     </tr>
                     <tr>
-                        <th>Number of Runners</th>
-                        <td><input type="number" name="runner_count" value="{{len .RunnerInfo}}" min="1"></td>
-                    </tr>
-                    <tr>
-                        <th>In-Flight Requests (per runner)</th>
-                        <td><input type="number" name="inflight" value="{{.Config.Inflight}}" min="0" max="{{.MaxInFlight}}"></td>
+                        <th>In-Flight Requests</th>
+                        <td><input type="number" id="edit-inflight" name="inflight" min="0" max="{{.MaxInFlight}}"></td>
                     </tr>
                     <tr>
                         <th>Mode</th>
                         <td>
-                            <select name="mode">
-                                <option value="asap" {{if eq .Config.Mode "asap"}}selected{{end}}>ASAP (Max Speed)</option>
-                                <option value="stable" {{if eq .Config.Mode "stable"}}selected{{end}}>Stable Interval</option>
-                                <option value="exponential" {{if eq .Config.Mode "exponential"}}selected{{end}}>Exponential Distribution</option>
+                            <select id="edit-mode" name="mode">
+                                <option value="asap">ASAP (Max Speed)</option>
+                                <option value="static">Static Interval</option>
+                                <option value="exponential">Exponential Distribution</option>
                             </select>
                         </td>
                     </tr>
                     <tr>
-                        <th>Target RPS</th>
-                        <td><input type="number" name="rps" value="{{.Config.Rps}}" min="0" step="0.1"></td>
+                        <th>Target QPS</th>
+                        <td><input type="number" id="edit-qps" name="qps" min="0" step="0.1"></td>
                     </tr>
                     <tr>
                         <th>Request Timeout</th>
-                        <td><input type="text" name="timeout" value="{{.Config.Timeout}}"></td>
+                        <td><input type="text" id="edit-timeout" name="timeout"></td>
                     </tr>
                 </table>
-                <button type="submit">Update Configuration</button>
+                <button type="submit">Update Runner</button>
+                <button type="button" onclick="hideEditForm()">Cancel</button>
             </form>
         </div>
         
         <div class="section">
             <h2>Usage</h2>
             <ul>
-                <li><strong>Number of Runners:</strong> Number of concurrent runner instances, each with its own gRPC connection</li>
+                <li><strong>Add Runner:</strong> Click "Add New Runner" to create a new runner with default configuration</li>
+                <li><strong>Edit Runner:</strong> Click "Edit" next to any runner to modify its configuration</li>
+                <li><strong>Remove Runner:</strong> Click "Remove" to delete a runner (confirmation required)</li>
                 <li><strong>In-Flight Requests:</strong> Per-runner limit of concurrent requests allowed</li>
                 <li><strong>ASAP Mode:</strong> Send requests as fast as possible (limited only by In-Flight)</li>
-                <li><strong>Stable Interval:</strong> Send requests at regular intervals based on Target RPS</li>
-                <li><strong>Exponential Distribution:</strong> Send requests with exponentially distributed intervals (average = Target RPS)</li>
+                <li><strong>Static Interval:</strong> Send requests at regular intervals based on Target QPS</li>
+                <li><strong>Exponential Distribution:</strong> Send requests with exponentially distributed intervals (average = Target QPS)</li>
                 <li><strong>Request Timeout:</strong> Maximum time to wait for each request (e.g., "10s", "500ms")</li>
                 <li><strong>Prometheus Metrics:</strong> Metrics are labeled with runner_id for per-runner analysis</li>
             </ul>
         </div>
     </div>
+    
+    <script>
+        function showAddForm() {
+            document.getElementById('add-form').style.display = 'block';
+        }
+        
+        function hideAddForm() {
+            document.getElementById('add-form').style.display = 'none';
+        }
+        
+        function showEditForm(runnerId, inflight, mode, qps, timeout) {
+            // Hide add form if it's open
+            hideAddForm();
+            
+            document.getElementById('edit-runner-id').value = runnerId;
+            document.getElementById('edit-runner-display').textContent = runnerId;
+            document.getElementById('edit-inflight').value = inflight;
+            document.getElementById('edit-mode').value = mode;
+            document.getElementById('edit-qps').value = qps;
+            document.getElementById('edit-timeout').value = timeout;
+            document.getElementById('edit-form').style.display = 'block';
+            document.getElementById('edit-form').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function hideEditForm() {
+            document.getElementById('edit-form').style.display = 'none';
+        }
+    </script>
 </body>
 </html>
 `
