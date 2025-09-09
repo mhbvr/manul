@@ -10,6 +10,11 @@ import (
 	"time"
 
 	pb "github.com/mhbvr/manul/proto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -18,6 +23,7 @@ import (
 
 var (
 	lrClosed = errors.New("LoadRunner closed")
+	tracer   = otel.Tracer("load_runner")
 )
 
 type LoadRunner struct {
@@ -57,8 +63,11 @@ func NewLoadRunner(ctx context.Context,
 	cfg *worker.WorkerConfig,
 	opts ...Option) (*LoadRunner, error) {
 
-	// Create new gRPC connection
-	conn, err := grpc.NewClient(serverAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Create new gRPC connection with OpenTelemetry instrumentation
+	conn, err := grpc.NewClient(serverAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to server: %v", err)
 	}
@@ -139,6 +148,8 @@ func (lr *LoadRunner) Close() {
 }
 
 func (lr *LoadRunner) job(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "get_cat_photo_job", trace.WithNewRoot())
+
 	// Pick random cat ID
 	if len(lr.cats) == 0 {
 		return errors.New("no cats available")
@@ -152,6 +163,10 @@ func (lr *LoadRunner) job(ctx context.Context) error {
 	}
 	photoID := photos[rand.Intn(len(photos))]
 
+	span.AddEvent("looking for photo", trace.WithAttributes(
+		attribute.Int("cat_id", int(catID)),
+		attribute.Int("photo_id", int(photoID)),
+	))
 	start := time.Now()
 	_, err := lr.client.GetPhoto(ctx, &pb.GetPhotoRequest{
 		CatId:   catID,
@@ -161,6 +176,13 @@ func (lr *LoadRunner) job(ctx context.Context) error {
 	if lr.recorder != nil {
 		lr.recorder(lr.id, time.Since(start).Seconds(), err == nil)
 	}
+
+	if err != nil {
+		span.SetStatus(codes.Error, err.Error())
+	} else {
+		span.SetStatus(codes.Ok, "")
+	}
+	span.End()
 	return err
 }
 

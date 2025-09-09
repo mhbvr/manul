@@ -4,6 +4,8 @@ import (
 	"flag"
 	"log"
 	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -14,14 +16,28 @@ func main() {
 	)
 	flag.Parse()
 
+	zpagesHandler, cleanup, err := InitializeTracing()
+	if err != nil {
+		log.Fatalf("Failed to initialize tracing: %v", err)
+	}
+	defer cleanup()
+
 	loadTester, err := NewLoadTester(*serverAddr, *maxInflight)
 	if err != nil {
 		log.Fatal(err)
 	}
-	webHandler := NewWebHandler(loadTester)
+	webHandler := NewWebHandler(loadTester, nil)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", webHandler.HandleIndex)
+	mux.HandleFunc("POST /add-runner", webHandler.HandleAddRunner)
+	mux.HandleFunc("POST /remove-runner", webHandler.HandleRemoveRunner)
+	mux.HandleFunc("POST /update-runner", webHandler.HandleUpdateRunner)
+	mux.Handle("GET /metrics", promhttp.Handler())
+	mux.Handle("GET /tracez", zpagesHandler)
 
 	log.Printf("Starting load tester web interface on %s", *webAddr)
 
-	http.Handle("/", webHandler.HttpMux())
+	http.Handle("/", mux)
 	log.Fatal(http.ListenAndServe(*webAddr, nil))
 }

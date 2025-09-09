@@ -6,15 +6,16 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/zpages"
 )
 
 type WebHandler struct {
-	loadTester *LoadTester
-	template   *template.Template
+	loadTester      *LoadTester
+	template        *template.Template
+	zpagesProcessor *zpages.SpanProcessor
 }
 
-func NewWebHandler(loadTester *LoadTester) *WebHandler {
+func NewWebHandler(loadTester *LoadTester, zpagesProcessor *zpages.SpanProcessor) *WebHandler {
 	funcMap := template.FuncMap{
 		"add": func(a, b int) int {
 			return a + b
@@ -22,22 +23,13 @@ func NewWebHandler(loadTester *LoadTester) *WebHandler {
 	}
 	tmpl := template.Must(template.New("index").Funcs(funcMap).Parse(indexTemplate))
 	return &WebHandler{
-		loadTester: loadTester,
-		template:   tmpl,
+		loadTester:      loadTester,
+		template:        tmpl,
+		zpagesProcessor: zpagesProcessor,
 	}
 }
 
-func (wh *WebHandler) HttpMux() *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", wh.handleIndex)
-	mux.HandleFunc("POST /add-runner", wh.handleAddRunner)
-	mux.HandleFunc("POST /remove-runner", wh.handleRemoveRunner)
-	mux.HandleFunc("POST /update-runner", wh.handleUpdateRunner)
-	mux.Handle("GET /metrics", promhttp.Handler())
-	return mux
-}
-
-func (wh *WebHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
+func (wh *WebHandler) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	info, err := wh.loadTester.GetRunnersInfo(r.Context())
 	if err != nil {
 		http.Error(w, "Failed to get runners info: "+err.Error(), http.StatusInternalServerError)
@@ -61,7 +53,7 @@ func (wh *WebHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (wh *WebHandler) handleAddRunner(w http.ResponseWriter, r *http.Request) {
+func (wh *WebHandler) HandleAddRunner(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if err = r.ParseForm(); err != nil {
@@ -109,7 +101,7 @@ func (wh *WebHandler) handleAddRunner(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (wh *WebHandler) handleRemoveRunner(w http.ResponseWriter, r *http.Request) {
+func (wh *WebHandler) HandleRemoveRunner(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Failed to parse form: "+err.Error(), http.StatusBadRequest)
 		return
@@ -128,7 +120,7 @@ func (wh *WebHandler) handleRemoveRunner(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (wh *WebHandler) handleUpdateRunner(w http.ResponseWriter, r *http.Request) {
+func (wh *WebHandler) HandleUpdateRunner(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if err = r.ParseForm(); err != nil {
@@ -284,7 +276,7 @@ const indexTemplate = `
                     {{end}}
                 </tbody>
             </table>
-            <p><a href="/" class="refresh-link">Refresh Now</a> | <a href="/metrics" class="refresh-link">Prometheus Metrics</a></p>
+            <p><a href="/" class="refresh-link">Refresh Now</a> | <a href="/metrics" class="refresh-link">Prometheus Metrics</a> | <a href="/tracez" class="refresh-link">Traces</a></p>
         </div>
         
         <div class="section controls" id="edit-form" style="display: none;">

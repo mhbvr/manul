@@ -8,6 +8,16 @@ import (
 	"log"
 	"math/rand"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+)
+
+var (
+	workerClosed = errors.New("Worker closed")
+	tracer       = otel.Tracer("worker")
 )
 
 // WorkerConfig defines the configuration for a Worker instance that is adjustable in runtime
@@ -48,11 +58,6 @@ func ExponentialIntervalGenerator(qps float64) time.Duration {
 	}
 	return time.Duration(rand.ExpFloat64() / qps * float64(time.Second))
 }
-
-
-var (
-	workerClosed = errors.New("Close() called")
-)
 
 type Option func(*Worker)
 
@@ -210,6 +215,8 @@ func (w *Worker) do(ctx context.Context, timeout time.Duration) error {
 // loop handles job scheduling, rate limiting, and configuration updates.
 // This method blocks until the context is cancelled.
 func (w *Worker) loop() error {
+	_, span := tracer.Start(w.ctx, "worker_loop")
+
 	timer := w.setTimer()
 	var trigger chan struct{}
 	currentInFlight := w.cfg.InFlight
@@ -219,9 +226,18 @@ func (w *Worker) loop() error {
 		trigger = w.tokens
 	}
 
+	span.AddEvent("starting loop", trace.WithAttributes(
+		attribute.Float64("qps", w.cfg.Qps),
+		attribute.Bool("asap", w.cfg.IntervalGenerator == nil),
+		attribute.Float64("timeout_sec", w.cfg.Timeout.Seconds()),
+		attribute.Int("inflight", w.cfg.InFlight),
+	))
+
 	for {
 		select {
 		case <-w.ctx.Done():
+			span.SetStatus(codes.Ok, "")
+			span.End()
 			return context.Cause(w.ctx)
 		case <-timer:
 			// Timer was set and expired
@@ -247,6 +263,12 @@ func (w *Worker) loop() error {
 		case cfg := <-w.cfgChan:
 			// Configuration request, assume that validity is checked
 			w.cfg = cfg
+			span.AddEvent("configuration changed", trace.WithAttributes(
+				attribute.Float64("qps", w.cfg.Qps),
+				attribute.Bool("asap", w.cfg.IntervalGenerator == nil),
+				attribute.Float64("timeout_sec", w.cfg.Timeout.Seconds()),
+				attribute.Int("inflight", w.cfg.InFlight),
+			))
 
 			// Increase in flight token limiter
 			// It is supposed to be fast operation, so doing it immedately
