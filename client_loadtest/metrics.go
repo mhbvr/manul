@@ -22,7 +22,7 @@ func NewMetrics() *Metrics {
 				Name: "loadtester_requests_total",
 				Help: "Total number of requests sent by the load tester",
 			},
-			[]string{"status"}, // "success" or "error"
+			[]string{"status", "runner_id"}, // "success" or "error", runner identifier
 		),
 
 		RequestLatency: promauto.NewHistogramVec(
@@ -33,18 +33,18 @@ func NewMetrics() *Metrics {
 					0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
 				},
 			},
-			[]string{"status"}, // "success" or "error"
+			[]string{"status", "runner_id"}, // "success" or "error", runner identifier
 		),
 	}
 }
 
 // RecordRequest records a completed request with its latency and status
-func (m *Metrics) RecordRequest(durationSeconds float64, success bool) {
+func (m *Metrics) RecordRequest(durationSeconds float64, success bool, runnerID string) {
 	status := "ok"
 	if !success {
 		status = "error"
 	}
 
-	m.ResponseCounter.WithLabelValues(status).Inc()
-	m.RequestLatency.WithLabelValues(status).Observe(durationSeconds)
+	m.ResponseCounter.WithLabelValues(status, runnerID).Inc()
+	m.RequestLatency.WithLabelValues(status, runnerID).Observe(durationSeconds)
 }

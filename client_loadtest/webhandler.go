@@ -15,7 +15,12 @@ type WebHandler struct {
 }
 
 func NewWebHandler(loadTester *LoadTester) *WebHandler {
-	tmpl := template.Must(template.New("index").Parse(indexTemplate))
+	funcMap := template.FuncMap{
+		"add": func(a, b int) int {
+			return a + b
+		},
+	}
+	tmpl := template.Must(template.New("index").Funcs(funcMap).Parse(indexTemplate))
 	return &WebHandler{
 		loadTester: loadTester,
 		template:   tmpl,
@@ -31,20 +36,28 @@ func (wh *WebHandler) HttpMux() *http.ServeMux {
 }
 
 func (wh *WebHandler) handleIndex(w http.ResponseWriter, r *http.Request) {
-	info, err := wh.loadTester.GetInfo(r.Context())
+	info, err := wh.loadTester.GetRunnersInfo(r.Context())
 	if err != nil {
-		http.Error(w, "Failed to get loadtester info: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to get runners info: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	config, err := wh.loadTester.GetConfig(r.Context())
+	if err != nil {
+		http.Error(w, "Failed to get loadtester config: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	data := struct {
 		ServerAddr  string
 		MaxInFlight int
-		RunnerInfo  *RunnerInfo
+		RunnerInfo  []*RunnerInfo
+		Config      *RunnerConfig
 	}{
 		ServerAddr:  wh.loadTester.serverAddr,
 		MaxInFlight: wh.loadTester.maxInflight,
 		RunnerInfo:  info,
+		Config:      config,
 	}
 
 	w.Header().Set("Content-Type", "text/html")
@@ -94,6 +107,24 @@ func (wh *WebHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Update runner count
+	if runnerCountStr := r.FormValue("runner_count"); runnerCountStr != "" {
+		var runnerCount int
+		if runnerCount, err = strconv.Atoi(runnerCountStr); err != nil {
+			http.Error(w, "Failed to parse runner_count: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if runnerCount <= 0 {
+			http.Error(w, "Runner count must be positive", http.StatusBadRequest)
+			return
+		}
+		err = wh.loadTester.SetRunnerCount(runnerCount)
+		if err != nil {
+			http.Error(w, "Failed to set runner count: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
 	err = wh.loadTester.SetConfig(r.Context(), cfg)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -128,11 +159,28 @@ const indexTemplate = `
         <h1>Cat Photo Load Tester Control Panel</h1>
         
         <div class="section stats">
-            <h2>Statistics</h2>
+            <h2>Runner Statistics ({{len .RunnerInfo}} active)</h2>
             <table>
-                <tr><th>Start time</th><td>{{.RunnerInfo.StartTime.Format "02 Jan, 2006 15:04:05 UTC"}}</td></tr>
-                <tr><th>Successful Requests</th><td>{{.RunnerInfo.OkRequests}}</td></tr>
-                <tr><th>Failed Requests</th><td>{{.RunnerInfo.ErrRequests}}</td></tr>
+                <thead>
+                    <tr>
+                        <th>Runner ID</th>
+                        <th>Start Time</th>
+                        <th>In-Flight</th>
+                        <th>Successful Requests</th>
+                        <th>Failed Requests</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .RunnerInfo}}
+                    <tr>
+                        <td>{{.RunnerID}}</td>
+                        <td>{{.StartTime.Format "15:04:05"}}</td>
+                        <td>{{.RunnerCfg.Inflight}}</td>
+                        <td>{{.OkRequests}}</td>
+                        <td>{{.ErrRequests}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
             </table>
             <p><a href="/" class="refresh-link">Refresh Now</a> | <a href="/metrics" class="refresh-link">Prometheus Metrics</a></p>
         </div>
@@ -146,26 +194,30 @@ const indexTemplate = `
                         <td>{{.ServerAddr}} (read-only)</td>
                     </tr>
                     <tr>
-                        <th>In-Flight Requests</th>
-                        <td><input type="number" name="inflight" value="{{.RunnerInfo.RunnerCfg.Inflight}}" min="0" max="{{.MaxInFlight}}"></td>
+                        <th>Number of Runners</th>
+                        <td><input type="number" name="runner_count" value="{{len .RunnerInfo}}" min="1"></td>
+                    </tr>
+                    <tr>
+                        <th>In-Flight Requests (per runner)</th>
+                        <td><input type="number" name="inflight" value="{{.Config.Inflight}}" min="0" max="{{.MaxInFlight}}"></td>
                     </tr>
                     <tr>
                         <th>Mode</th>
                         <td>
                             <select name="mode">
-                                <option value="asap" {{if eq .RunnerInfo.RunnerCfg.Mode "asap"}}selected{{end}}>ASAP (Max Speed)</option>
-                                <option value="stable" {{if eq .RunnerInfo.RunnerCfg.Mode "stable"}}selected{{end}}>Stable Interval</option>
-                                <option value="exponential" {{if eq .RunnerInfo.RunnerCfg.Mode "exponential"}}selected{{end}}>Exponential Distribution</option>
+                                <option value="asap" {{if eq .Config.Mode "asap"}}selected{{end}}>ASAP (Max Speed)</option>
+                                <option value="stable" {{if eq .Config.Mode "stable"}}selected{{end}}>Stable Interval</option>
+                                <option value="exponential" {{if eq .Config.Mode "exponential"}}selected{{end}}>Exponential Distribution</option>
                             </select>
                         </td>
                     </tr>
                     <tr>
                         <th>Target RPS</th>
-                        <td><input type="number" name="rps" value="{{.RunnerInfo.RunnerCfg.Rps}}" min="0" step="0.1"></td>
+                        <td><input type="number" name="rps" value="{{.Config.Rps}}" min="0" step="0.1"></td>
                     </tr>
                     <tr>
                         <th>Request Timeout</th>
-                        <td><input type="text" name="timeout" value="{{.RunnerInfo.RunnerCfg.Timeout}}"></td>
+                        <td><input type="text" name="timeout" value="{{.Config.Timeout}}"></td>
                     </tr>
                 </table>
                 <button type="submit">Update Configuration</button>
@@ -175,11 +227,13 @@ const indexTemplate = `
         <div class="section">
             <h2>Usage</h2>
             <ul>
-                <li><strong>In-Flight Requests:</strong> Current limit of concurrent requests allowed</li>
+                <li><strong>Number of Runners:</strong> Number of concurrent runner instances, each with its own gRPC connection</li>
+                <li><strong>In-Flight Requests:</strong> Per-runner limit of concurrent requests allowed</li>
                 <li><strong>ASAP Mode:</strong> Send requests as fast as possible (limited only by In-Flight)</li>
                 <li><strong>Stable Interval:</strong> Send requests at regular intervals based on Target RPS</li>
                 <li><strong>Exponential Distribution:</strong> Send requests with exponentially distributed intervals (average = Target RPS)</li>
                 <li><strong>Request Timeout:</strong> Maximum time to wait for each request (e.g., "10s", "500ms")</li>
+                <li><strong>Prometheus Metrics:</strong> Metrics are labeled with runner_id for per-runner analysis</li>
             </ul>
         </div>
     </div>

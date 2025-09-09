@@ -212,7 +212,7 @@ func TestInflightLimiting(t *testing.T) {
 	job := func(ctx context.Context) error {
 		current := atomic.AddInt64(&activeJobs, 1)
 		defer atomic.AddInt64(&activeJobs, -1)
-		
+
 		// Update max if needed
 		for {
 			max := atomic.LoadInt64(&maxActive)
@@ -220,7 +220,7 @@ func TestInflightLimiting(t *testing.T) {
 				break
 			}
 		}
-		
+
 		atomic.AddInt64(&totalJobs, 1)
 		time.Sleep(50 * time.Millisecond) // Simulate work
 		return nil
@@ -298,7 +298,7 @@ func TestDynamicConfigUpdate(t *testing.T) {
 		Timeout:  time.Second,
 	}
 
-	err = runner.SetConfig(ctx, newCfg)
+	err = runner.SetConfig(ctx, *newCfg)
 	if err != nil {
 		t.Errorf("SetConfig() failed: %v", err)
 	}

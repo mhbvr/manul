@@ -62,11 +62,11 @@ func (r *Runner) GetConfig(ctx context.Context) (*RunnerConfig, error) {
 
 // SetConfig updates the runner configuration asynchronously.
 // The update will be applied during the next iteration of the Run loop.
-func (r *Runner) SetConfig(ctx context.Context, cfg *RunnerConfig) error {
+func (r *Runner) SetConfig(ctx context.Context, cfg RunnerConfig) error {
 	select {
 	case <-ctx.Done():
 		return context.Cause(ctx)
-	case r.cfgChan <- cfg:
+	case r.cfgChan <- &cfg:
 	}
 	return nil
 }
