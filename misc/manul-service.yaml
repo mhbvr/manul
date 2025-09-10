@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: manul
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: manul
+  ports:
+    - port: 8081

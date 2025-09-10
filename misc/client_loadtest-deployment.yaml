@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manul-loadtester
+  namespace: default
+  labels:
+    app: manul-loadtester
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: manul-loadtester
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "8080"
+        prometheus.io/scrape: "true"      
+      labels:
+        app: manul-loadtester
+    spec:
+      containers:
+      - name: loadtester
+        image: ko://github.com/mhbvr/manul/client_loadtest
+        args:
+          - '-web_addr=0.0.0.0:8080'
+          - '-server=manul:8081'
+        ports:
+          - containerPort: 8080
+        resources:
+          limits:
+            cpu: 1
+            memory: 500Mi
+          requests:
+            cpu: 500m
+            memory: 250Mi
