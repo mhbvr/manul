@@ -28,9 +28,9 @@ spec:
         - |
           set -e
 
-          DB_FILE="bolt.db"
+          DB_FILE="filetree.tar.gz"
 
-          if [ -f /manul/$DB_FILE ]; then 
+          if [ -d /manul/filetree ]; then 
             echo "Already downloaded"
             exit 0
           fi          
@@ -45,9 +45,16 @@ spec:
             exit 1
           fi
           
-          # Uncomment if nessesary
-          # cd /manul
-          # tar -xzf /manul/$DB_FILE
+          # Uncomment if nessesary          
+          cd /manul
+          tar -xvf $DB_FILE
+        resources:
+          limits:
+            cpu: 500m
+            memory: 250Mi
+          requests:
+            cpu: 250m
+            memory: 250Mi
           
         volumeMounts:
         - name: storage
@@ -57,8 +64,8 @@ spec:
         image: ko://github.com/mhbvr/manul/server
         args:
           - '-host=0.0.0.0'
-          - '-db-type=bolt'
-          - '-db=/manul/bolt.db'
+          - '-db-type=filetree'
+          - '-db=/manul/filetree'
         ports:
           - containerPort: 8081
         resources:
