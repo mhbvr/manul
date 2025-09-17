@@ -1,0 +1,39 @@
+# Job for downloading cat photos and prepare db
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-prepare
+  namespace: default
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: db-prepare
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: data-downloader
+        image: my.local:5000/dbcreator:latest
+        command: ["/bin/sh"]
+        args: ["/scripts/db-prepare.sh"]
+        volumeMounts:
+        - name: shared-storage
+          mountPath: /data
+        - name: script-volume
+          mountPath: /scripts
+        resources:
+          requests:
+            memory: "1024Mi"
+            cpu: "100m"
+          limits:
+            memory: "1024Mi"
+            cpu: "500m"
+      volumes:
+      - name: shared-storage
+        persistentVolumeClaim:
+          claimName: shared-storage
+      - name: script-volume
+        configMap:
+          name: db-prepare-script
+          defaultMode: 0755  # Make scripts executable

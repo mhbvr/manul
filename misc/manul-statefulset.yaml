@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: manul
+  namespace: default
+  labels:
+    app: manul
+spec:
+  replicas: 1
+  serviceName: manul
+  selector:
+    matchLabels:
+      app: manul
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "8081"
+        prometheus.io/scrape: "true"
+      labels:
+        app: manul
+    spec:
+      initContainers:
+      - name: db-downloader
+        image: curlimages/curl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+
+          DB_FILE="bolt.db"
+
+          if [ -f /manul/$DB_FILE ]; then 
+            echo "Already downloaded"
+            exit 0
+          fi          
+
+
+          echo "Downloading database file: $DB_FILE from webstor..."
+
+          # Download the specific database file
+          curl -L -o /manul/$DB_FILE http://webstor:8080/download/$DB_FILE
+          if [ $? -ne 0 ]; then
+            echo "Download failed"
+            exit 1
+          fi
+          
+          # Uncomment if nessesary
+          # cd /manul
+          # tar -xzf /manul/$DB_FILE
+          
+        volumeMounts:
+        - name: storage
+          mountPath: /manul
+      containers:
+      - name: server
+        image: ko://github.com/mhbvr/manul/server
+        args:
+          - '-host=0.0.0.0'
+          - '-db-type=bolt'
+          - '-db=/manul/bolt.db'
+        ports:
+          - containerPort: 8081
+        resources:
+          limits:
+            cpu: 500m
+            memory: 250Mi
+          requests:
+            cpu: 250m
+            memory: 250Mi
+        volumeMounts:
+          - name: storage
+            mountPath: /manul/
+        readinessProbe:
+          tcpSocket:
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+  volumeClaimTemplates:
+  - metadata:
+      name: storage
+    spec:
+      accessModes: ["ReadWriteOncePod"]
+      storageClassName: "nfs-csi"
+      resources:
+        requests:
+          storage: 30Gi

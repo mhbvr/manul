@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-prepare-script
+data:
+  db-prepare.sh: |
+    #!/bin/bash
+    set -e
+    
+    download_unzip() {
+      echo "Starting download from Kaggle..."
+      curl -L -o cat-individuals.zip "https://www.kaggle.com/api/v1/datasets/download/timost1234/cat-individuals"
+  
+      if [ $? -ne 0 ]; then
+        echo "Download failed!"
+        exit 1
+      fi
+      
+      unzip -o cat-individuals.zip
+
+      if [ $? -ne 0 ]; then
+        echo "Unzip failed"
+        exit 1
+      fi
+
+      rm cat-individuals.zip
+    }
+
+    make_bolt() {
+      echo "Creating Bolt cat DB"
+
+      if [ -f bolt ]; then
+        echo "Deleting unfinished db"
+        rm bolt
+      fi
+      
+      /usr/bin/dbcreator -type=bolt -db=/data/bolt -src=/data/cat_individuals_dataset
+      mv /data/bolt /data/bolt.db
+    }
+
+    make_pebble() {
+      echo "Creating Pebble cat DB"
+
+      if [ -d pebble ]; then
+        echo "Deleting unfinished db"
+        rm -rf pebble
+      fi
+        
+      /usr/bin/dbcreator -type=pebble -db=/data/pebble -src=/data/cat_individuals_dataset -batch-size=20
+      tar -cvzf pebble.tar.gz pebble
+      rm -rf pebble
+    }
+
+    make_filetree() {
+      echo "Creating Filetree cat DB"
+
+      if [ -f filetree ]; then
+        echo "Deleting unfinished db"
+        rm -rf filetree
+      fi
+      
+      /usr/bin/dbcreator -type=filetree -db=/data/filetree -src=/data/cat_individuals_dataset
+      tar -cvzf filetree.tar.gz filetree
+      rm -rf filetree
+    }
+
+
+    cd /data
+  
+    if [ -d cat_individuals_dataset ]; then
+      echo "Folder cat_individuals_dataset existed, skip download and unzip"
+    else
+      download_unzip
+    fi
+
+    if [ -f bolt.db ]; then 
+      echo "bolt.db exists, skipping"
+    else
+      make_bolt
+    fi
+
+    if [ -f pebble.tar.gz ]; then 
+      echo "pebble.tar.gz exists, skipping"
+    else
+      make_pebble
+    fi
+
+
+    if [ -f filetree.tar.gz ]; then 
+      echo "filetree.tar.gz exists, skipping"
+    else
+      make_filetree
+    fi
+    
+    echo "Processing complete!"

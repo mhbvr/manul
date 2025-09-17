@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: alpine-debug
+  namespace: default
+  labels:
+    app: alpine-debug
+spec:
+  containers:
+  - name: alpine
+    image: my.local:5000/dbcreator:latest
+    command: ["/bin/sh"]
+    args: ["-c", "sleep 3600"]
+    volumeMounts:
+    - name: shared-storage
+      mountPath: /data
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+  volumes:
+  - name: shared-storage
+    persistentVolumeClaim:
+      claimName: shared-storage
+  restartPolicy: Never

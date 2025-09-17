@@ -9,7 +9,7 @@ import (
 
 func main() {
 	var (
-		storageDir = flag.String("storage", "./files", "Directory to serve files from")
+		storageDir = flag.String("storage", "/data", "Directory to serve files from")
 		addr       = flag.String("addr", ":8080", "Address to listen on")
 	)
 	flag.Parse()

@@ -1,0 +1,13 @@
+# PVC for shared storage - 40GB with NFS storage class
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: shared-storage
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany  # Allows multiple pods to read/write simultaneously
+  storageClassName: nfs-csi
+  resources:
+    requests:
+      storage: 50Gi
