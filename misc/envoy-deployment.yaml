@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy-manul-proxy
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: envoy-manul-proxy
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "9901"
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "stats/prometheus"
+      labels:
+        app: envoy-manul-proxy
+    spec:
+      containers:
+      - name: envoy
+        image: envoyproxy/envoy:v1.35-latest
+        ports:
+        - name: manul
+          containerPort: 8081
+          protocol: TCP
+        - name: admin
+          containerPort: 9901
+          protocol: TCP
+        volumeMounts:
+        - name: envoy-config
+          mountPath: /etc/envoy
+          readOnly: true
+        command:
+        - "/usr/local/bin/envoy"
+        args:
+        - "-c"
+        - "/etc/envoy/envoy.yaml"
+        - "--log-level"
+        - "info"
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: 9901
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 9901
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+      volumes:
+      - name: envoy-config
+        configMap:
+          name: envoy-manul-config
