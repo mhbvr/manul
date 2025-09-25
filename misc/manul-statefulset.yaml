@@ -14,7 +14,7 @@ spec:
   template:
     metadata:
       annotations:
-        prometheus.io/port: "8081"
+        prometheus.io/port: "8082"
         prometheus.io/scrape: "true"
       labels:
         app: manul
@@ -68,6 +68,7 @@ spec:
           - '-db=/manul/filetree'
         ports:
           - containerPort: 8081
+          - containerPort: 8082
         resources:
           limits:
             cpu: 500m
