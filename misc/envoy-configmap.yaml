@@ -5,6 +5,10 @@ metadata:
   namespace: default
 data:
   envoy.yaml: |
+    node:
+      id: envoy-node
+      cluster: manul
+
     admin:
       address:
         socket_address:
@@ -73,24 +77,29 @@ data:
       clusters:
       - name: manul_cluster
         connect_timeout: 1s
-        type: STATIC
+        type: EDS
         lb_policy: ROUND_ROBIN
+        eds_cluster_config:
+          eds_config:
+            api_config_source:
+              api_type: GRPC
+              grpc_services:
+              - envoy_grpc:
+                  cluster_name: eds_cluster
+
+      - name: eds_cluster
+        type: STRICT_DNS
         typed_extension_protocol_options:
           envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
             "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
             explicit_http_config:
               http2_protocol_options: {}
         load_assignment:
-          cluster_name: manul_cluster
+          cluster_name: eds_cluster
           endpoints:
           - lb_endpoints:
             - endpoint:
                 address:
                   socket_address:
-                    address: <IP1>
-                    port_value: 8081
-            - endpoint:
-                address:
-                  socket_address:
-                    address: <IP2>
-                    port_value: 8081
+                    address: envoy-control-plane
+                    port_value: 18000
