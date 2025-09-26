@@ -12,6 +12,7 @@ import (
 
 	endpointservice "github.com/envoyproxy/go-control-plane/envoy/service/endpoint/v3"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/channelz/service"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -68,6 +69,9 @@ func main() {
 
 	// Register reflection service for debugging and service discovery
 	reflection.Register(grpcServer)
+
+	// Register Channelz service for gRPC debugging and monitoring
+	service.RegisterChannelzServiceToServer(grpcServer)
 
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
