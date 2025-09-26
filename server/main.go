@@ -11,6 +11,7 @@ import (
 	pb "github.com/mhbvr/manul/proto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/channelz/service"
 )
 
 var (
@@ -45,6 +46,9 @@ func main() {
 	defer catPhotosServer.Close()
 
 	pb.RegisterCatPhotosServiceServer(s, catPhotosServer)
+
+	// Register Channelz service for gRPC debugging and monitoring
+	service.RegisterChannelzServiceToServer(s)
 
 	grpc_prometheus.Register(s)
 	grpc_prometheus.EnableHandlingTimeHistogram()
