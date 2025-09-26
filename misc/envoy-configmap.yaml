@@ -76,9 +76,13 @@ data:
 
       clusters:
       - name: manul_cluster
-        connect_timeout: 1s
         type: EDS
         lb_policy: ROUND_ROBIN
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+            explicit_http_config:
+              http2_protocol_options: {}
         eds_cluster_config:
           eds_config:
             api_config_source:

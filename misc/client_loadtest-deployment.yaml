@@ -23,7 +23,6 @@ spec:
         image: ko://github.com/mhbvr/manul/client_loadtest
         args:
           - '-web_addr=0.0.0.0:8080'
-          - '-server=manul:8081'
         ports:
           - containerPort: 8080
         resources:

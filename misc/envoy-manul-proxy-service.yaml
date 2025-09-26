@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy-manul-proxy
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: envoy-manul-proxy
+  ports:
+    - port: 8081

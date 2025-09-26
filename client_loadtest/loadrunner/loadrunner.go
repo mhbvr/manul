@@ -28,6 +28,7 @@ var (
 
 type LoadRunner struct {
 	id          string
+	serverAddr  string
 	worker      *worker.Worker
 	maxInFlight int
 
@@ -77,6 +78,7 @@ func NewLoadRunner(ctx context.Context,
 	ctx, cancel := context.WithCancelCause(context.Background())
 	res := &LoadRunner{
 		id:          id,
+		serverAddr:  serverAddr,
 		client:      client,
 		conn:        conn,
 		ctx:         ctx,
@@ -130,6 +132,7 @@ func (lr *LoadRunner) GetInfo() (*LoadRunnerInfo, error) {
 	var err error
 	res := &LoadRunnerInfo{
 		Id:          lr.id,
+		Server:      lr.serverAddr,
 		StartTime:   lr.startTime,
 		MaxInFlight: lr.maxInFlight,
 	}

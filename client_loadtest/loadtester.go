@@ -29,7 +29,6 @@ func generator(mode string) (func(float64) time.Duration, error) {
 type LoadTester struct {
 	mu sync.RWMutex
 
-	serverAddr  string
 	maxInflight int
 	defaultCfg  *worker.WorkerConfig
 
@@ -41,11 +40,10 @@ type LoadTester struct {
 	metrics *Metrics
 }
 
-func NewLoadTester(serverAddr string, maxInflight int) (*LoadTester, error) {
+func NewLoadTester(maxInflight int) (*LoadTester, error) {
 	// Default runner configuration
 
 	lt := &LoadTester{
-		serverAddr:   serverAddr,
 		maxInflight:  maxInflight,
 		runners:      make(map[string]*loadrunner.LoadRunner),
 		runnersMode:  make(map[string]string),
@@ -55,7 +53,7 @@ func NewLoadTester(serverAddr string, maxInflight int) (*LoadTester, error) {
 	return lt, nil
 }
 
-func (lt *LoadTester) AddRunner(inFlight int, qps float64, timeout time.Duration, mode string) error {
+func (lt *LoadTester) AddRunner(serverAddr string, inFlight int, qps float64, timeout time.Duration, mode string) error {
 	generator, err := generator(mode)
 	if err != nil {
 		return err
@@ -73,7 +71,7 @@ func (lt *LoadTester) AddRunner(inFlight int, qps float64, timeout time.Duration
 	runner, err := loadrunner.NewLoadRunner(
 		context.Background(),
 		runnerID,
-		lt.serverAddr,
+		serverAddr,
 		lt.maxInflight,
 		&worker.WorkerConfig{
 			InFlight:          inFlight,

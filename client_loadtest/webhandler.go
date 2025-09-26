@@ -37,11 +37,9 @@ func (wh *WebHandler) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		ServerAddr  string
 		MaxInFlight int
 		RunnerInfo  []*Status
 	}{
-		ServerAddr:  wh.loadTester.serverAddr,
 		MaxInFlight: wh.loadTester.maxInflight,
 		RunnerInfo:  info,
 	}
@@ -58,6 +56,13 @@ func (wh *WebHandler) HandleAddRunner(w http.ResponseWriter, r *http.Request) {
 
 	if err = r.ParseForm(); err != nil {
 		http.Error(w, "Failed to parse form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Parse server address
+	serverAddr := r.FormValue("server_addr")
+	if serverAddr == "" {
+		http.Error(w, "server_addr is required", http.StatusBadRequest)
 		return
 	}
 
@@ -94,7 +99,7 @@ func (wh *WebHandler) HandleAddRunner(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := wh.loadTester.AddRunner(inFlight, qps, timeout, mode); err != nil {
+	if err := wh.loadTester.AddRunner(serverAddr, inFlight, qps, timeout, mode); err != nil {
 		http.Error(w, "Failed to add runner: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -212,7 +217,7 @@ const indexTemplate = `
                     <table>
                         <tr>
                             <th>Server Address</th>
-                            <td>{{.ServerAddr}} (read-only)</td>
+                            <td><input type="text" name="server_addr" placeholder="localhost:8081" required></td>
                         </tr>
                         <tr>
                             <th>In-Flight Requests</th>
@@ -245,6 +250,7 @@ const indexTemplate = `
                 <thead>
                     <tr>
                         <th>Runner ID</th>
+                        <th>Server</th>
                         <th>Start Time</th>
                         <th>In-Flight</th>
                         <th>Mode</th>
@@ -259,6 +265,7 @@ const indexTemplate = `
                     {{range .RunnerInfo}}
                     <tr>
                         <td>{{.LoadRunnerInfo.Id}}</td>
+                        <td>{{.LoadRunnerInfo.Server}}</td>
                         <td>{{.LoadRunnerInfo.StartTime.Format "15:04:05"}}</td>
                         <td>{{.LoadRunnerInfo.WorkerCfg.InFlight}}</td>
                         <td>{{.Mode}}</td>
@@ -287,10 +294,6 @@ const indexTemplate = `
                     <tr>
                         <th>Runner ID</th>
                         <td id="edit-runner-display"></td>
-                    </tr>
-                    <tr>
-                        <th>Server Address</th>
-                        <td>{{.ServerAddr}} (read-only)</td>
                     </tr>
                     <tr>
                         <th>In-Flight Requests</th>
