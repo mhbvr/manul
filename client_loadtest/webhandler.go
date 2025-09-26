@@ -217,7 +217,7 @@ const indexTemplate = `
                     <table>
                         <tr>
                             <th>Server Address</th>
-                            <td><input type="text" name="server_addr" placeholder="localhost:8081" required></td>
+                            <td><input type="text" name="server_addr" placeholder="localhost:8081 or k8s://service.namespace:port" required></td>
                         </tr>
                         <tr>
                             <th>In-Flight Requests</th>
@@ -329,6 +329,7 @@ const indexTemplate = `
                 <li><strong>Add Runner:</strong> Click "Add New Runner" to create a new runner with default configuration</li>
                 <li><strong>Edit Runner:</strong> Click "Edit" next to any runner to modify its configuration</li>
                 <li><strong>Remove Runner:</strong> Click "Remove" to delete a runner (confirmation required)</li>
+                <li><strong>Server Address:</strong> Use traditional addresses (localhost:8081) or Kubernetes services (k8s://my-service.default:8080)</li>
                 <li><strong>In-Flight Requests:</strong> Per-runner limit of concurrent requests allowed</li>
                 <li><strong>ASAP Mode:</strong> Send requests as fast as possible (limited only by In-Flight)</li>
                 <li><strong>Static Interval:</strong> Send requests at regular intervals based on Target QPS</li>

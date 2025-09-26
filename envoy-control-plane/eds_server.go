@@ -12,6 +12,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/server/v3"
+	"github.com/mhbvr/manul/k8s_watcher"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -94,7 +95,7 @@ func (eds *EDSServer) GetServer() server.Server {
 	return eds.server
 }
 
-func (eds *EDSServer) UpdateEndpoints(endpoints []Endpoint) error {
+func (eds *EDSServer) UpdateEndpoints(endpoints []k8s_watcher.Endpoint) error {
 	clusterLoadAssignment := eds.createClusterLoadAssignment(endpoints)
 
 	snapshot, err := cache.NewSnapshot(
@@ -118,7 +119,7 @@ func (eds *EDSServer) UpdateEndpoints(endpoints []Endpoint) error {
 	return nil
 }
 
-func (eds *EDSServer) createClusterLoadAssignment(endpoints []Endpoint) *endpoint.ClusterLoadAssignment {
+func (eds *EDSServer) createClusterLoadAssignment(endpoints []k8s_watcher.Endpoint) *endpoint.ClusterLoadAssignment {
 	var lbEndpoints []*endpoint.LbEndpoint
 
 	for _, ep := range endpoints {
@@ -153,7 +154,7 @@ func (eds *EDSServer) createClusterLoadAssignment(endpoints []Endpoint) *endpoin
 	}
 }
 
-func (eds *EDSServer) Start(watcher *K8sWatcher) {
+func (eds *EDSServer) Start(watcher *k8s_watcher.K8sWatcher) {
 	log.Printf("Starting EDS server for cluster: %s", eds.clusterName)
 
 	// Listen for updates

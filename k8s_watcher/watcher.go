@@ -1,4 +1,4 @@
-package main
+package k8s_watcher
 
 import (
 	"context"
@@ -63,7 +63,7 @@ func NewK8sWatcher(ctx context.Context, namespace, serviceName, kubeconfig strin
 
 func (kw *K8sWatcher) NotifChan() chan struct{} {
 	res := make(chan struct{}, 1)
-	// Set inital notification
+	// Set initial notification
 	res <- struct{}{}
 	kw.mu.Lock()
 	defer kw.mu.Unlock()
@@ -189,7 +189,7 @@ func (kw *K8sWatcher) notify() {
 		select {
 		case c <- struct{}{}:
 		default:
-			log.Printf("Notif still penfing")
+			log.Printf("Notif still pending")
 		}
 	}
 }

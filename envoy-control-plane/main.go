@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	endpointservice "github.com/envoyproxy/go-control-plane/envoy/service/endpoint/v3"
+	"github.com/mhbvr/manul/k8s_watcher"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/channelz/service"
 	"google.golang.org/grpc/reflection"
@@ -46,7 +47,7 @@ func main() {
 	defer cancel()
 
 	// Create Kubernetes watcher
-	watcher, err := NewK8sWatcher(ctx, *namespace, *serviceName, *kubeconfig)
+	watcher, err := k8s_watcher.NewK8sWatcher(ctx, *namespace, *serviceName, *kubeconfig)
 	if err != nil {
 		log.Fatalf("Failed to create Kubernetes watcher: %v", err)
 	}

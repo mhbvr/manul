@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"time"
 
+	_ "github.com/mhbvr/manul/k8s_grpc_resolver"
 	pb "github.com/mhbvr/manul/proto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -64,10 +65,11 @@ func NewLoadRunner(ctx context.Context,
 	cfg *worker.WorkerConfig,
 	opts ...Option) (*LoadRunner, error) {
 
-	// Create new gRPC connection with OpenTelemetry instrumentation
+	// Create new gRPC connection with OpenTelemetry instrumentation and round robin load balancing
 	conn, err := grpc.NewClient(serverAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to server: %v", err)
