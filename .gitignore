@@ -40,3 +40,6 @@ client_loadtest/client_loadtest
 dbcreator/dbcreator
 webstor/webstor
 envoy-control-plane/envoy-control-plane
+
+# Directory for tests
+testdata/

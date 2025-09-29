@@ -8,19 +8,25 @@ import (
 	"log"
 	"time"
 
+	v3orcapb "github.com/cncf/xds/go/xds/data/orca/v3"
 	pb "github.com/mhbvr/manul/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
-	listCats   = flag.Bool("list-cats", false, "List all cat IDs")
-	listPhotos = flag.Uint64("list-photos", 0, "List photo IDs for cat ID")
-	catID      = flag.Uint64("cat-id", 0, "Cat ID for get-photo")
-	photoID    = flag.Uint64("photo-id", 0, "Photo ID for get-photo")
-	outputFile = flag.String("output", "", "Output file for photo data")
-	serverAddr = flag.String("addr", "localhost:8081", "Server address")
+	listCats    = flag.Bool("list-cats", false, "List all cat IDs")
+	listPhotos  = flag.Uint64("list-photos", 0, "List photo IDs for cat ID")
+	catID       = flag.Uint64("cat-id", 0, "Cat ID for get-photo")
+	photoID     = flag.Uint64("photo-id", 0, "Photo ID for get-photo")
+	outputFile  = flag.String("output", "", "Output file for photo data")
+	serverAddr  = flag.String("addr", "localhost:8081", "Server address")
+	showMetrics = flag.Bool("show-metrics", false, "Show ORCA metrics from trailers")
 )
+
+const ORCAMetadataKey = "endpoint-load-metrics-bin"
 
 func main() {
 	flag.Parse()
@@ -52,12 +58,28 @@ func getClient() pb.CatPhotosServiceClient {
 	return pb.NewCatPhotosServiceClient(conn)
 }
 
+func printORCAMetrics(trailer metadata.MD) {
+	vals := trailer.Get(ORCAMetadataKey)
+	if len(vals) == 0 {
+		log.Println("No ORCA metrics")
+	}
+
+	for _, v := range vals {
+		var report v3orcapb.OrcaLoadReport
+		if err := proto.Unmarshal([]byte(v), &report); err != nil {
+			log.Printf("failed to unmarshal load report found in metadata: %v", err)
+		}
+		fmt.Printf("ORCA report: %v\n", report.String())
+	}
+}
+
 func listAllCats() {
 	client := getClient()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	resp, err := client.ListCats(ctx, &pb.ListCatsRequest{})
+	var trailer metadata.MD
+	resp, err := client.ListCats(ctx, &pb.ListCatsRequest{}, grpc.Trailer(&trailer))
 	if err != nil {
 		log.Fatalf("ListCats failed: %v", err)
 	}
@@ -66,6 +88,10 @@ func listAllCats() {
 	for _, catID := range resp.CatIds {
 		fmt.Printf("%d\n", catID)
 	}
+
+	if *showMetrics {
+		printORCAMetrics(trailer)
+	}
 }
 
 func listPhotosForCat(catID uint64) {
@@ -73,7 +99,8 @@ func listPhotosForCat(catID uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	resp, err := client.ListPhotos(ctx, &pb.ListPhotosRequest{CatId: catID})
+	var trailer metadata.MD
+	resp, err := client.ListPhotos(ctx, &pb.ListPhotosRequest{CatId: catID}, grpc.Trailer(&trailer))
 	if err != nil {
 		log.Fatalf("ListPhotos failed: %v", err)
 	}
@@ -82,6 +109,10 @@ func listPhotosForCat(catID uint64) {
 	for _, photoID := range resp.PhotoIds {
 		fmt.Printf("%d\n", photoID)
 	}
+
+	if *showMetrics {
+		printORCAMetrics(trailer)
+	}
 }
 
 func getCatPhoto(catID, photoID uint64) {
@@ -89,10 +120,11 @@ func getCatPhoto(catID, photoID uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	var trailer metadata.MD
 	resp, err := client.GetPhoto(ctx, &pb.GetPhotoRequest{
 		CatId:   catID,
 		PhotoId: photoID,
-	})
+	}, grpc.Trailer(&trailer))
 	if err != nil {
 		log.Fatalf("GetPhoto failed: %v", err)
 	}
@@ -105,5 +137,9 @@ func getCatPhoto(catID, photoID uint64) {
 		fmt.Printf("Photo saved to %s (%d bytes)\n", *outputFile, len(resp.PhotoData))
 	} else {
 		fmt.Printf("Photo data (%d bytes):\n%s\n", len(resp.PhotoData), string(resp.PhotoData))
+	}
+
+	if *showMetrics {
+		printORCAMetrics(trailer)
 	}
 }
