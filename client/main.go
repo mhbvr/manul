@@ -4,8 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	v3orcapb "github.com/cncf/xds/go/xds/data/orca/v3"
@@ -17,15 +20,17 @@ import (
 )
 
 var (
-	listCats    = flag.Bool("list-cats", false, "List all cat IDs")
-	listPhotos  = flag.Uint64("list-photos", 0, "List photo IDs for cat ID")
-	catID       = flag.Uint64("cat-id", 0, "Cat ID for get-photo")
-	photoID     = flag.Uint64("photo-id", 0, "Photo ID for get-photo")
-	outputFile  = flag.String("output", "", "Output file for photo data")
-	serverAddr  = flag.String("addr", "localhost:8081", "Server address")
-	showMetrics = flag.Bool("show-metrics", false, "Show ORCA metrics from trailers")
-	width       = flag.Uint("width", 0, "Width for scaling (0 = no scaling)")
-	algorithm   = flag.String("algorithm", "BILINEAR", "Scaling algorithm: NEAREST_NEIGHBOR, BILINEAR, CATMULL_ROM, APPROX_BILINEAR")
+	listCats     = flag.Bool("list-cats", false, "List all cat IDs")
+	listPhotos   = flag.Uint64("list-photos", 0, "List photo IDs for cat ID")
+	catID        = flag.Uint64("cat-id", 0, "Cat ID for get-photo")
+	photoID      = flag.Uint64("photo-id", 0, "Photo ID for get-photo")
+	outputFile   = flag.String("output", "", "Output file for photo data")
+	serverAddr   = flag.String("addr", "localhost:8081", "Server address")
+	showMetrics  = flag.Bool("show-metrics", false, "Show ORCA metrics from trailers")
+	width        = flag.Uint("width", 0, "Width for scaling (0 = no scaling)")
+	algorithm    = flag.String("algorithm", "BILINEAR", "Scaling algorithm: NEAREST_NEIGHBOR, BILINEAR, CATMULL_ROM, APPROX_BILINEAR")
+	streamPhotos = flag.String("stream-photos", "", "Stream multiple photos (format: cat_id1:photo_id1,cat_id2:photo_id2,...)")
+	outputDir    = flag.String("output-dir", "/tmp", "Output directory for photos")
 )
 
 const ORCAMetadataKey = "endpoint-load-metrics-bin"
@@ -60,6 +65,11 @@ func main() {
 
 	if *catID != 0 && *photoID != 0 {
 		getCatPhoto(*catID, *photoID)
+		return
+	}
+
+	if *streamPhotos != "" {
+		getPhotosStream(*streamPhotos)
 		return
 	}
 
@@ -132,6 +142,17 @@ func listPhotosForCat(catID uint64) {
 	}
 }
 
+func saveFile(catId, photoId uint64, data []byte) {
+	filename := fmt.Sprintf("%s/cat_%d_photo_%d.jpg", *outputDir, catId, photoId)
+	err := ioutil.WriteFile(filename, data, 0644)
+	if err != nil {
+		log.Printf("Failed to write file %s: %v", filename, err)
+	} else {
+		fmt.Printf("Cat %d, Photo %d saved to %s (%d bytes)\n",
+			catId, photoId, filename, len(data))
+	}
+}
+
 func getCatPhoto(catID, photoID uint64) {
 	client := getClient()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -148,16 +169,92 @@ func getCatPhoto(catID, photoID uint64) {
 		log.Fatalf("GetPhoto failed: %v", err)
 	}
 
-	if *outputFile != "" {
-		err := ioutil.WriteFile(*outputFile, resp.PhotoData, 0644)
-		if err != nil {
-			log.Fatalf("Failed to write file: %v", err)
+	saveFile(catID, photoID, resp.PhotoData)
+
+	if *showMetrics {
+		printORCAMetrics(trailer)
+	}
+}
+
+func parsePhotoRequests(input string) ([]*pb.PhotoRequest, error) {
+	pairs := strings.Split(input, ",")
+	var requests []*pb.PhotoRequest
+
+	for _, pair := range pairs {
+		parts := strings.Split(strings.TrimSpace(pair), ":")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid format for pair: %s (expected cat_id:photo_id)", pair)
 		}
-		fmt.Printf("Photo saved to %s (%d bytes)\n", *outputFile, len(resp.PhotoData))
-	} else {
-		fmt.Printf("Photo data (%d bytes):\n%s\n", len(resp.PhotoData), string(resp.PhotoData))
+
+		catID, err := strconv.ParseUint(parts[0], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cat_id: %s", parts[0])
+		}
+
+		photoID, err := strconv.ParseUint(parts[1], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid photo_id: %s", parts[1])
+		}
+
+		requests = append(requests, &pb.PhotoRequest{
+			CatId:   catID,
+			PhotoId: photoID,
+		})
 	}
 
+	return requests, nil
+}
+
+func getPhotosStream(photoRequestsStr string) {
+	client := getClient()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Parse photo requests
+	photoRequests, err := parsePhotoRequests(photoRequestsStr)
+	if err != nil {
+		log.Fatalf("Failed to parse photo requests: %v", err)
+	}
+
+	// Create stream request
+	req := &pb.GetPhotosStreamRequest{
+		PhotoRequests:    photoRequests,
+		Width:            uint32(*width),
+		ScalingAlgorithm: getScalingAlgorithm(*algorithm),
+	}
+
+	// Start streaming
+	var trailer metadata.MD
+	stream, err := client.GetPhotosStream(ctx, req, grpc.Trailer(&trailer))
+	if err != nil {
+		log.Fatalf("Failed to start streaming: %v", err)
+	}
+
+	err = stream.CloseSend()
+	if err != nil {
+		log.Fatalf("Close send error: %v", err)
+	}
+
+	fmt.Printf("Streaming %d photos...\n", len(photoRequests))
+
+	for {
+		response, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Failed to receive response: %v", err)
+		}
+
+		if response.Success {
+			saveFile(response.CatId, response.PhotoId, response.PhotoData)
+		} else {
+			fmt.Printf("Error Cat %d, Photo %d: %s\n",
+				response.CatId, response.PhotoId, response.ErrorMessage)
+		}
+	}
+
+	fmt.Println("Streaming completed.")
 	if *showMetrics {
 		printORCAMetrics(trailer)
 	}

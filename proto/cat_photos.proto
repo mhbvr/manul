@@ -8,6 +8,7 @@ service CatPhotosService {
   rpc ListCats(ListCatsRequest) returns (ListCatsResponse);
   rpc ListPhotos(ListPhotosRequest) returns (ListPhotosResponse);
   rpc GetPhoto(GetPhotoRequest) returns (GetPhotoResponse);
+  rpc GetPhotosStream(GetPhotosStreamRequest) returns (stream GetPhotosStreamResponse);
 }
 
 message ListCatsRequest {
@@ -41,4 +42,23 @@ message GetPhotoRequest {
 
 message GetPhotoResponse {
   bytes photo_data = 1;
+}
+
+message PhotoRequest {
+  uint64 cat_id = 1;
+  uint64 photo_id = 2;
+}
+
+message GetPhotosStreamRequest {
+  repeated PhotoRequest photo_requests = 1;
+  uint32 width = 2;
+  ScalingAlgorithm scaling_algorithm = 3;
+}
+
+message GetPhotosStreamResponse {
+  uint64 cat_id = 1;
+  uint64 photo_id = 2;
+  bytes photo_data = 3;
+  bool success = 4;
+  string error_message = 5;
 }

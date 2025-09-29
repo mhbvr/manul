@@ -165,3 +165,46 @@ func (s *CatPhotosServer) GetPhoto(ctx context.Context, req *pb.GetPhotoRequest)
 		PhotoData: photoData,
 	}, nil
 }
+
+func (s *CatPhotosServer) GetPhotosStream(req *pb.GetPhotosStreamRequest, stream pb.CatPhotosService_GetPhotosStreamServer) error {
+	var err error
+	startTime := time.Now()
+	orca.CallMetricsRecorderFromContext(stream.Context())
+	defer func() {
+		if s.orcaReporter != nil {
+			s.orcaReporter.RecordRequest(time.Since(startTime))
+		}
+	}()
+
+	for _, photoReq := range req.PhotoRequests {
+		// Get photo data
+		response := &pb.GetPhotosStreamResponse{
+			CatId:   photoReq.CatId,
+			PhotoId: photoReq.PhotoId,
+			Success: true,
+		}
+
+		response.PhotoData, err = s.dbReader.GetPhotoData(photoReq.CatId, photoReq.PhotoId)
+		if err != nil {
+			// Send error response
+			response.Success = false
+			response.ErrorMessage = err.Error()
+		}
+
+		// Apply scaling if width > 0
+		if err == nil && req.Width > 0 {
+			response.PhotoData, err = scaleImage(response.PhotoData, req.Width, req.ScalingAlgorithm)
+			if err != nil {
+				response.Success = false
+				response.ErrorMessage = fmt.Sprintf("failed to scale image: %v", err)
+			}
+		}
+
+		// Send the response
+		if err := stream.Send(response); err != nil {
+			return fmt.Errorf("failed to send response: %v", err)
+		}
+	}
+
+	return nil
+}
