@@ -25,9 +25,18 @@ message ListPhotosResponse {
   repeated uint64 photo_ids = 1;
 }
 
+enum ScalingAlgorithm {
+  NEAREST_NEIGHBOR = 0;
+  BILINEAR = 1;
+  CATMULL_ROM = 2;
+  APPROX_BILINEAR = 3;
+}
+
 message GetPhotoRequest {
   uint64 cat_id = 1;
   uint64 photo_id = 2;
+  uint32 width = 3;
+  ScalingAlgorithm scaling_algorithm = 4;
 }
 
 message GetPhotoResponse {

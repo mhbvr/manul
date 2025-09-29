@@ -24,9 +24,26 @@ var (
 	outputFile  = flag.String("output", "", "Output file for photo data")
 	serverAddr  = flag.String("addr", "localhost:8081", "Server address")
 	showMetrics = flag.Bool("show-metrics", false, "Show ORCA metrics from trailers")
+	width       = flag.Uint("width", 0, "Width for scaling (0 = no scaling)")
+	algorithm   = flag.String("algorithm", "BILINEAR", "Scaling algorithm: NEAREST_NEIGHBOR, BILINEAR, CATMULL_ROM, APPROX_BILINEAR")
 )
 
 const ORCAMetadataKey = "endpoint-load-metrics-bin"
+
+func getScalingAlgorithm(alg string) pb.ScalingAlgorithm {
+	switch alg {
+	case "NEAREST_NEIGHBOR":
+		return pb.ScalingAlgorithm_NEAREST_NEIGHBOR
+	case "BILINEAR":
+		return pb.ScalingAlgorithm_BILINEAR
+	case "CATMULL_ROM":
+		return pb.ScalingAlgorithm_CATMULL_ROM
+	case "APPROX_BILINEAR":
+		return pb.ScalingAlgorithm_APPROX_BILINEAR
+	default:
+		return pb.ScalingAlgorithm_BILINEAR
+	}
+}
 
 func main() {
 	flag.Parse()
@@ -122,8 +139,10 @@ func getCatPhoto(catID, photoID uint64) {
 
 	var trailer metadata.MD
 	resp, err := client.GetPhoto(ctx, &pb.GetPhotoRequest{
-		CatId:   catID,
-		PhotoId: photoID,
+		CatId:            catID,
+		PhotoId:          photoID,
+		Width:            uint32(*width),
+		ScalingAlgorithm: getScalingAlgorithm(*algorithm),
 	}, grpc.Trailer(&trailer))
 	if err != nil {
 		log.Fatalf("GetPhoto failed: %v", err)
