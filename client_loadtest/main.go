@@ -14,7 +14,7 @@ import (
 func main() {
 	var (
 		webAddr      = flag.String("web_addr", "localhost:8080", "Web interface host:port")
-		channelzAddr = flag.String("channelz_addr", "localhost:8081", "Channelz gRPC server host:port")
+		channelzAddr = flag.String("channelz_addr", "localhost:8090", "Channelz gRPC server host:port")
 		maxInflight  = flag.Int("max-inflight", 10000, "Maximum number of in-flight requests per runner")
 	)
 	flag.Parse()

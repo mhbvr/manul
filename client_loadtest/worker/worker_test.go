@@ -13,11 +13,11 @@ import (
 func TestNewWorker(t *testing.T) {
 	t.Parallel()
 
-	validJob := func(context.Context) error { return nil }
+	validJob := func(context.Context) (time.Duration, error) { return 0, nil }
 
 	tests := []struct {
 		name    string
-		job     func(context.Context) error
+		job     func(context.Context) (time.Duration, error)
 		opts    []Option
 		wantErr bool
 	}{
@@ -119,9 +119,9 @@ func TestGetConfig(t *testing.T) {
 		Timeout:           500 * time.Millisecond,
 	}
 
-	worker, err := NewWorker(ctx, func(context.Context) error {
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
 		time.Sleep(10 * time.Millisecond)
-		return nil
+		return 10 * time.Millisecond, nil
 	}, WithConfig(cfg), WithMaxInFlight(10))
 	if err != nil {
 		t.Fatalf("NewWorker() failed: %v", err)
@@ -158,10 +158,10 @@ func TestSetConfig(t *testing.T) {
 	defer cancel()
 
 	var jobCount int64
-	worker, err := NewWorker(ctx, func(context.Context) error {
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
 		atomic.AddInt64(&jobCount, 1)
 		time.Sleep(10 * time.Millisecond)
-		return nil
+		return 10 * time.Millisecond, nil
 	}, WithMaxInFlight(10))
 	if err != nil {
 		t.Fatalf("NewWorker() failed: %v", err)
@@ -226,8 +226,8 @@ func TestSetConfigValidation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	worker, err := NewWorker(ctx, func(context.Context) error {
-		return nil
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
+		return 0, nil
 	}, WithMaxInFlight(5))
 	if err != nil {
 		t.Fatalf("NewWorker() failed: %v", err)
@@ -288,10 +288,10 @@ func TestASAPMode(t *testing.T) {
 	defer cancel()
 
 	var jobCount int64
-	worker, err := NewWorker(ctx, func(context.Context) error {
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
 		atomic.AddInt64(&jobCount, 1)
 		time.Sleep(5 * time.Millisecond) // Short job duration
-		return nil
+		return 5 * time.Millisecond, nil
 	}, WithConfig(WorkerConfig{
 		InFlight: 3,
 		Timeout:  time.Second,
@@ -329,11 +329,11 @@ func TestStableIntervalTiming(t *testing.T) {
 	var mu sync.Mutex
 
 	qps := 5.0 // 200ms intervals
-	worker, err := NewWorker(ctx, func(context.Context) error {
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
 		mu.Lock()
 		jobTimes = append(jobTimes, time.Now())
 		mu.Unlock()
-		return nil
+		return 0, nil
 	}, WithConfig(WorkerConfig{
 		InFlight:          1,
 		IntervalGenerator: StableIntervalGenerator,
@@ -386,11 +386,11 @@ func TestExponentialIntervalVariability(t *testing.T) {
 	var jobTimes []time.Time
 	var mu sync.Mutex
 
-	worker, err := NewWorker(ctx, func(context.Context) error {
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
 		mu.Lock()
 		jobTimes = append(jobTimes, time.Now())
 		mu.Unlock()
-		return nil
+		return 0, nil
 	}, WithConfig(WorkerConfig{
 		InFlight:          1,
 		IntervalGenerator: ExponentialIntervalGenerator,
@@ -446,10 +446,10 @@ func TestZeroQPSHandling(t *testing.T) {
 	defer cancel()
 
 	var jobCount int64
-	worker, err := NewWorker(ctx, func(context.Context) error {
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
 		atomic.AddInt64(&jobCount, 1)
 		time.Sleep(5 * time.Millisecond)
-		return nil
+		return 5 * time.Millisecond, nil
 	}, WithConfig(WorkerConfig{
 		InFlight:          2,
 		IntervalGenerator: StableIntervalGenerator, // Will return 0 for QPS=0
@@ -483,7 +483,7 @@ func TestInFlightLimiting(t *testing.T) {
 	var maxActive int64
 	var totalJobs int64
 
-	job := func(context.Context) error {
+	job := func(context.Context) (time.Duration, error) {
 		current := atomic.AddInt64(&activeJobs, 1)
 		defer atomic.AddInt64(&activeJobs, -1)
 
@@ -497,7 +497,7 @@ func TestInFlightLimiting(t *testing.T) {
 
 		atomic.AddInt64(&totalJobs, 1)
 		time.Sleep(50 * time.Millisecond) // Simulate work
-		return nil
+		return 50 * time.Millisecond, nil
 	}
 
 	expectedInFlight := 3
@@ -541,7 +541,7 @@ func TestDynamicInFlightIncrease(t *testing.T) {
 	var secondHalfMax int64
 
 	startTime := time.Now()
-	job := func(context.Context) error {
+	job := func(context.Context) (time.Duration, error) {
 		current := atomic.AddInt64(&activeJobs, 1)
 		defer atomic.AddInt64(&activeJobs, -1)
 
@@ -574,7 +574,7 @@ func TestDynamicInFlightIncrease(t *testing.T) {
 		}
 
 		time.Sleep(30 * time.Millisecond)
-		return nil
+		return 30 * time.Millisecond, nil
 	}
 
 	worker, err := NewWorker(ctx, job, WithConfig(WorkerConfig{
@@ -629,7 +629,7 @@ func TestDynamicInFlightDecrease(t *testing.T) {
 	var activeJobs int64
 	var maxActive int64
 
-	job := func(context.Context) error {
+	job := func(context.Context) (time.Duration, error) {
 		current := atomic.AddInt64(&activeJobs, 1)
 		defer atomic.AddInt64(&activeJobs, -1)
 
@@ -642,7 +642,7 @@ func TestDynamicInFlightDecrease(t *testing.T) {
 		}
 
 		time.Sleep(30 * time.Millisecond)
-		return nil
+		return 30 * time.Millisecond, nil
 	}
 
 	worker, err := NewWorker(ctx, job, WithConfig(WorkerConfig{
@@ -694,15 +694,16 @@ func TestJobTimeout(t *testing.T) {
 	var jobCompleted int64
 	var jobTimedOut int64
 
-	job := func(ctx context.Context) error {
+	job := func(ctx context.Context) (time.Duration, error) {
+		start := time.Now()
 		atomic.AddInt64(&jobStarted, 1)
 		select {
 		case <-ctx.Done():
 			atomic.AddInt64(&jobTimedOut, 1)
-			return ctx.Err()
+			return time.Since(start), ctx.Err()
 		case <-time.After(100 * time.Millisecond): // Longer than timeout
 			atomic.AddInt64(&jobCompleted, 1)
-			return nil
+			return time.Since(start), nil
 		}
 	}
 
@@ -748,14 +749,14 @@ func TestJobErrors(t *testing.T) {
 	var errorCount int64
 	testError := errors.New("test error")
 
-	job := func(context.Context) error {
+	job := func(context.Context) (time.Duration, error) {
 		count := atomic.AddInt64(&jobCount, 1)
 		if count%2 == 0 { // Every second job fails
 			atomic.AddInt64(&errorCount, 1)
-			return testError
+			return 0, testError
 		}
 		time.Sleep(10 * time.Millisecond)
-		return nil
+		return 10 * time.Millisecond, nil
 	}
 
 	worker, err := NewWorker(ctx, job, WithConfig(WorkerConfig{
@@ -795,10 +796,10 @@ func TestWorkerClose(t *testing.T) {
 	ctx := context.Background() // Long-running context
 	
 	var jobCount int64
-	job := func(context.Context) error {
+	job := func(context.Context) (time.Duration, error) {
 		atomic.AddInt64(&jobCount, 1)
 		time.Sleep(10 * time.Millisecond)
-		return nil
+		return 10 * time.Millisecond, nil
 	}
 
 	worker, err := NewWorker(ctx, job, WithConfig(WorkerConfig{
@@ -843,15 +844,16 @@ func TestContextCancellation(t *testing.T) {
 	var jobCount int64
 	var contextCancelledJobs int64
 
-	job := func(jobCtx context.Context) error {
+	job := func(jobCtx context.Context) (time.Duration, error) {
+		start := time.Now()
 		atomic.AddInt64(&jobCount, 1)
-		
+
 		select {
 		case <-jobCtx.Done():
 			atomic.AddInt64(&contextCancelledJobs, 1)
-			return jobCtx.Err()
+			return time.Since(start), jobCtx.Err()
 		case <-time.After(50 * time.Millisecond):
-			return nil
+			return time.Since(start), nil
 		}
 	}
 
@@ -885,8 +887,8 @@ func TestGetConfigAfterClose(t *testing.T) {
 
 	ctx := context.Background()
 	
-	worker, err := NewWorker(ctx, func(context.Context) error {
-		return nil
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
+		return 0, nil
 	}, WithMaxInFlight(5))
 	if err != nil {
 		t.Fatalf("NewWorker() failed: %v", err)
@@ -910,8 +912,8 @@ func TestSetConfigAfterClose(t *testing.T) {
 
 	ctx := context.Background()
 	
-	worker, err := NewWorker(ctx, func(context.Context) error {
-		return nil
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
+		return 0, nil
 	}, WithMaxInFlight(5))
 	if err != nil {
 		t.Fatalf("NewWorker() failed: %v", err)
@@ -941,10 +943,10 @@ func TestRapidConfigUpdates(t *testing.T) {
 	defer cancel()
 
 	var jobCount int64
-	worker, err := NewWorker(ctx, func(context.Context) error {
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
 		atomic.AddInt64(&jobCount, 1)
 		time.Sleep(20 * time.Millisecond)
-		return nil
+		return 20 * time.Millisecond, nil
 	}, WithMaxInFlight(10))
 	if err != nil {
 		t.Fatalf("NewWorker() failed: %v", err)
@@ -998,9 +1000,9 @@ func TestConcurrentGetSetConfig(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 
-	worker, err := NewWorker(ctx, func(context.Context) error {
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
 		time.Sleep(5 * time.Millisecond)
-		return nil
+		return 5 * time.Millisecond, nil
 	}, WithMaxInFlight(10))
 	if err != nil {
 		t.Fatalf("NewWorker() failed: %v", err)
@@ -1070,9 +1072,9 @@ func TestMaxInFlightBoundary(t *testing.T) {
 	defer cancel()
 
 	maxInFlight := 3
-	worker, err := NewWorker(ctx, func(context.Context) error {
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
 		time.Sleep(10 * time.Millisecond)
-		return nil
+		return 10 * time.Millisecond, nil
 	}, WithConfig(WorkerConfig{
 		InFlight: maxInFlight,
 		Timeout:  time.Second,
@@ -1108,8 +1110,8 @@ func TestZeroMaxInFlight(t *testing.T) {
 
 	ctx := context.Background()
 	
-	_, err := NewWorker(ctx, func(context.Context) error {
-		return nil
+	_, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
+		return 0, nil
 	}, WithMaxInFlight(0))
 	
 	if err == nil {
@@ -1130,10 +1132,10 @@ func TestHighConcurrency(t *testing.T) {
 	var maxActive int64
 	var activeJobs int64
 
-	job := func(context.Context) error {
+	job := func(context.Context) (time.Duration, error) {
 		current := atomic.AddInt64(&activeJobs, 1)
 		defer atomic.AddInt64(&activeJobs, -1)
-		
+
 		// Update max
 		for {
 			max := atomic.LoadInt64(&maxActive)
@@ -1144,7 +1146,7 @@ func TestHighConcurrency(t *testing.T) {
 
 		atomic.AddInt64(&jobCount, 1)
 		time.Sleep(1 * time.Millisecond) // Very short jobs
-		return nil
+		return 1 * time.Millisecond, nil
 	}
 
 	highConcurrency := 20
@@ -1188,10 +1190,10 @@ func TestConfigTransitionStability(t *testing.T) {
 	defer cancel()
 
 	var jobCount int64
-	worker, err := NewWorker(ctx, func(context.Context) error {
+	worker, err := NewWorker(ctx, func(context.Context) (time.Duration, error) {
 		atomic.AddInt64(&jobCount, 1)
 		time.Sleep(10 * time.Millisecond)
-		return nil
+		return 10 * time.Millisecond, nil
 	}, WithMaxInFlight(10))
 	if err != nil {
 		t.Fatalf("NewWorker() failed: %v", err)

@@ -188,12 +188,12 @@ const indexTemplate = `
     <title>Load Tester Control Panel</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
-        .container { max-width: 800px; margin: 0 auto; }
-        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; overflow-x: auto; }
         .stats { background-color: #f5f5f5; }
         .controls { background-color: #fff; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid #ddd; font-size: 14px; }
         input, select { margin: 5px; padding: 5px; }
         button { background-color: #007cba; color: white; padding: 10px 20px; border: none; border-radius: 3px; cursor: pointer; }
         button:hover { background-color: #005a87; }
@@ -264,8 +264,8 @@ const indexTemplate = `
                 <tbody>
                     {{range .RunnerInfo}}
                     <tr>
-                        <td>{{.LoadRunnerInfo.Id}}</td>
-                        <td>{{.LoadRunnerInfo.Server}}</td>
+                        <td>{{.Id}}</td>
+                        <td>{{.Server}}</td>
                         <td>{{.LoadRunnerInfo.StartTime.Format "15:04:05"}}</td>
                         <td>{{.LoadRunnerInfo.WorkerCfg.InFlight}}</td>
                         <td>{{.Mode}}</td>
@@ -274,9 +274,9 @@ const indexTemplate = `
                         <td>{{.OkRequests}}</td>
                         <td>{{.ErrRequests}}</td>
                         <td style="white-space: nowrap;">
-                            <button type="button" onclick="showEditForm('{{.LoadRunnerInfo.Id}}', {{.LoadRunnerInfo.WorkerCfg.InFlight}}, '{{.Mode}}', {{.LoadRunnerInfo.WorkerCfg.Qps}}, '{{.LoadRunnerInfo.WorkerCfg.Timeout}}')" style="margin-right: 10px;">Edit</button><button type="submit" form="remove-form-{{.LoadRunnerInfo.Id}}" onclick="return confirm('Remove runner {{.LoadRunnerInfo.Id}}?')">Remove</button>
-                            <form id="remove-form-{{.LoadRunnerInfo.Id}}" method="post" action="/remove-runner" style="display: none;">
-                                <input type="hidden" name="runner_id" value="{{.LoadRunnerInfo.Id}}">
+                            <button type="button" onclick="showEditForm('{{.Id}}', {{.LoadRunnerInfo.WorkerCfg.InFlight}}, '{{.Mode}}', {{.LoadRunnerInfo.WorkerCfg.Qps}}, '{{.LoadRunnerInfo.WorkerCfg.Timeout}}')" style="margin-right: 10px;">Edit</button><button type="submit" form="remove-form-{{.Id}}" onclick="return confirm('Remove runner {{.Id}}?')">Remove</button>
+                            <form id="remove-form-{{.Id}}" method="post" action="/remove-runner" style="display: none;">
+                                <input type="hidden" name="runner_id" value="{{.Id}}">
                             </form>
                         </td>
                     </tr>

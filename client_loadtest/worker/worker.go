@@ -73,14 +73,15 @@ type Worker struct {
 	cfgChan     chan WorkerConfig      // Channel for configuration updates
 	readCfgChan chan chan WorkerConfig // Channel for reading current configuration
 
-	job func(context.Context) error // Job function to execute
+	job      func(context.Context) (time.Duration, error) // Job function to execute
+	recorder func(float64, bool)                          // Recorder function for metrics
 
 	logger *log.Logger
 }
 
 // NewWorker starts a new Worker with the given configuration, job function, and maximum in-flight limit.
 // Returns an error if any parameters are invalid.
-func NewWorker(ctx context.Context, job func(context.Context) error, opts ...Option) (*Worker, error) {
+func NewWorker(ctx context.Context, job func(context.Context) (time.Duration, error), opts ...Option) (*Worker, error) {
 	if job == nil {
 		return nil, fmt.Errorf("job function should be be defined")
 	}
@@ -145,6 +146,12 @@ func WithMaxInFlight(maxInFlight int) func(w *Worker) {
 	}
 }
 
+func WithRecorder(recorder func(float64, bool)) func(w *Worker) {
+	return func(w *Worker) {
+		w.recorder = recorder
+	}
+}
+
 // GetConfig returns a copy of the current configuration.
 func (w *Worker) GetConfig() (*WorkerConfig, error) {
 	respChan := make(chan WorkerConfig, 1)
@@ -203,13 +210,18 @@ func (w *Worker) setTimer() <-chan time.Time {
 
 // do executes the job function with the given timeout and returns a token when done.
 // This method handles the actual job execution and token management.
-func (w *Worker) do(ctx context.Context, timeout time.Duration) error {
+func (w *Worker) do(ctx context.Context, timeout time.Duration) {
 	defer func() {
 		w.tokens <- struct{}{}
 	}()
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return w.job(ctx)
+
+	duration, err := w.job(ctx)
+
+	if w.recorder != nil {
+		w.recorder(duration.Seconds(), err == nil)
+	}
 }
 
 // loop handles job scheduling, rate limiting, and configuration updates.
