@@ -23,9 +23,10 @@ type CatPhotosServer struct {
 	pb.UnimplementedCatPhotosServiceServer
 	dbReader     manul.DBReader
 	orcaReporter *ORCAReporter
+	readLimiter  chan struct{}
 }
 
-func NewCatPhotosServer(dbPath, dbType string, orcaReporter *ORCAReporter) (*CatPhotosServer, error) {
+func NewCatPhotosServer(dbPath, dbType string, maxConcurrentReads int, orcaReporter *ORCAReporter) (*CatPhotosServer, error) {
 	var dbReader manul.DBReader
 	var err error
 
@@ -44,9 +45,15 @@ func NewCatPhotosServer(dbPath, dbType string, orcaReporter *ORCAReporter) (*Cat
 		return nil, err
 	}
 
+	var readLimiter chan struct{}
+	if maxConcurrentReads > 0 {
+		readLimiter = make(chan struct{}, maxConcurrentReads)
+	}
+
 	return &CatPhotosServer{
 		dbReader:     dbReader,
 		orcaReporter: orcaReporter,
+		readLimiter:  readLimiter,
 	}, nil
 }
 
@@ -147,7 +154,14 @@ func (s *CatPhotosServer) GetPhoto(ctx context.Context, req *pb.GetPhotoRequest)
 		}
 	}()
 
+	if s.readLimiter != nil {
+		s.readLimiter <- struct{}{}
+	}
 	photoData, err = s.dbReader.GetPhotoData(req.CatId, req.PhotoId)
+	if s.readLimiter != nil {
+		<-s.readLimiter
+	}
+
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "photo with cat_id=%d, photo_id=%d not found: %v", req.CatId, req.PhotoId, err)
 	}
@@ -184,7 +198,14 @@ func (s *CatPhotosServer) GetPhotosStream(req *pb.GetPhotosStreamRequest, stream
 			Success: true,
 		}
 
+		if s.readLimiter != nil {
+			s.readLimiter <- struct{}{}
+		}
 		response.PhotoData, err = s.dbReader.GetPhotoData(photoReq.CatId, photoReq.PhotoId)
+		if s.readLimiter != nil {
+			<-s.readLimiter
+		}
+
 		if err != nil {
 			// Send error response
 			response.Success = false

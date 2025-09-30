@@ -16,13 +16,14 @@ import (
 )
 
 var (
-	host          = flag.String("host", "localhost", "Server host")
-	port          = flag.Int("port", 8081, "Server port")
-	metricsPort   = flag.Int("metrics-port", 8082, "Prometheus metrics port")
-	dbPath        = flag.String("db", "", "Database path (directory for filetree, file for bolt/pebble)")
-	dbType        = flag.String("db-type", "filetree", "Database type: filetree, bolt, or pebble")
-	orcaEnabled   = flag.Bool("orca", false, "Enable ORCA load reporting")
-	orcaThreshold = flag.Int("orca-num-req-report", 10, "Update utilization after every N requests")
+	host               = flag.String("host", "localhost", "Server host")
+	port               = flag.Int("port", 8081, "Server port")
+	metricsPort        = flag.Int("metrics-port", 8082, "Prometheus metrics port")
+	dbPath             = flag.String("db", "", "Database path (directory for filetree, file for bolt/pebble)")
+	dbType             = flag.String("db-type", "filetree", "Database type: filetree, bolt, or pebble")
+	orcaEnabled        = flag.Bool("orca", false, "Enable ORCA load reporting")
+	orcaThreshold      = flag.Int("orca-num-req-report", 10, "Update utilization after every N requests")
+	maxConcurrentReads = flag.Int("max-concurrent-reads", 0, "Maximum number of concurrent database reads (0 = unlimited)")
 )
 
 func main() {
@@ -55,7 +56,7 @@ func main() {
 
 	s := grpc.NewServer(serverOptions...)
 
-	catPhotosServer, err := NewCatPhotosServer(*dbPath, *dbType, orcaReporter)
+	catPhotosServer, err := NewCatPhotosServer(*dbPath, *dbType, *maxConcurrentReads, orcaReporter)
 	if err != nil {
 		log.Fatalf("Failed to create server: %v", err)
 	}
