@@ -269,7 +269,7 @@ const indexTemplate = `
                         <td>{{.LoadRunnerInfo.StartTime.Format "15:04:05"}}</td>
                         <td>{{.LoadRunnerInfo.WorkerCfg.InFlight}}</td>
                         <td>{{.Mode}}</td>
-                        <td>{{.LoadRunnerInfo.WorkerCfg.Qps}}</td>
+                        <td>{{if eq .Mode "asap"}}-{{else}}{{.LoadRunnerInfo.WorkerCfg.Qps}}{{end}}</td>
                         <td>{{.LoadRunnerInfo.WorkerCfg.Timeout}}</td>
                         <td>{{.OkRequests}}</td>
                         <td>{{.ErrRequests}}</td>
