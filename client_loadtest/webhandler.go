@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"html/template"
 	"net/http"
 	"strconv"
@@ -38,9 +39,11 @@ func (wh *WebHandler) HandleIndex(w http.ResponseWriter, r *http.Request) {
 
 	data := struct {
 		MaxInFlight int
+		LoadTypes   []string
 		RunnerInfo  []*Status
 	}{
-		MaxInFlight: wh.loadTester.maxInflight,
+		MaxInFlight: wh.loadTester.GetMaxInFlight(),
+		LoadTypes:   wh.loadTester.GetAvailableLoadTypes(),
 		RunnerInfo:  info,
 	}
 
@@ -59,11 +62,26 @@ func (wh *WebHandler) HandleAddRunner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse server address
-	serverAddr := r.FormValue("server_addr")
-	if serverAddr == "" {
-		http.Error(w, "server_addr is required", http.StatusBadRequest)
+	// Parse load type
+	loadType := r.FormValue("load_type")
+	if loadType == "" {
+		http.Error(w, "load_type is required", http.StatusBadRequest)
 		return
+	}
+
+	// Get available options for this load type
+	availableOptions, err := wh.loadTester.GetLoadOptions(loadType)
+	if err != nil {
+		http.Error(w, "Invalid load type: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Parse load options from form
+	loadOptions := make(map[string]string)
+	for optionName := range availableOptions {
+		if value := r.FormValue(optionName); value != "" {
+			loadOptions[optionName] = value
+		}
 	}
 
 	// Parse inflight
@@ -99,11 +117,28 @@ func (wh *WebHandler) HandleAddRunner(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := wh.loadTester.AddRunner(serverAddr, inFlight, qps, timeout, mode); err != nil {
+	if err := wh.loadTester.AddRunner(loadType, loadOptions, inFlight, qps, timeout, mode); err != nil {
 		http.Error(w, "Failed to add runner: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (wh *WebHandler) HandleGetLoadOptions(w http.ResponseWriter, r *http.Request) {
+	loadType := r.URL.Query().Get("type")
+	if loadType == "" {
+		http.Error(w, "type parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	options, err := wh.loadTester.GetLoadOptions(loadType)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(options)
 }
 
 func (wh *WebHandler) HandleRemoveRunner(w http.ResponseWriter, r *http.Request) {
@@ -213,15 +248,14 @@ const indexTemplate = `
             
             <div class="section controls" id="add-form" style="display: none; margin-bottom: 20px;">
                 <h3>Add New Runner</h3>
-                <form method="post" action="/add-runner">
+                <form method="post" action="/add-runner" id="add-runner-form">
                     <table>
                         <tr>
-                            <th>Server Address</th>
-                            <td><input type="text" name="server_addr" placeholder="localhost:8081 or k8s://service.namespace:port" required></td>
-                        </tr>
-                        <tr>
                             <th>In-Flight Requests</th>
-                            <td><input type="number" name="inflight" value="1" min="0" max="{{.MaxInFlight}}"></td>
+                            <td>
+                                <input type="number" name="inflight" value="1" min="0" max="{{.MaxInFlight}}">
+                                <em style="font-size: 0.9em; color: #666; margin-left: 10px;">(max: {{.MaxInFlight}}, shared across all runners)</em>
+                            </td>
                         </tr>
                         <tr>
                             <th>Mode</th>
@@ -241,7 +275,19 @@ const indexTemplate = `
                             <th>Request Timeout</th>
                             <td><input type="text" name="timeout" value="10s"></td>
                         </tr>
+                        <tr>
+                            <th>Load Type</th>
+                            <td>
+                                <select name="load_type" id="load-type-select" onchange="loadOptionsForType(this.value)" required>
+                                    <option value="">-- Select Load Type --</option>
+                                    {{range .LoadTypes}}
+                                    <option value="{{.}}">{{.}}</option>
+                                    {{end}}
+                                </select>
+                            </td>
+                        </tr>
                     </table>
+                    <div id="load-options-container"></div>
                     <button type="submit">Create Runner</button>
                     <button type="button" onclick="hideAddForm()">Cancel</button>
                 </form>
@@ -250,7 +296,7 @@ const indexTemplate = `
                 <thead>
                     <tr>
                         <th>Runner ID</th>
-                        <th>Server</th>
+                        <th>Load Options</th>
                         <th>Start Time</th>
                         <th>In-Flight</th>
                         <th>Mode</th>
@@ -265,7 +311,15 @@ const indexTemplate = `
                     {{range .RunnerInfo}}
                     <tr>
                         <td>{{.Id}}</td>
-                        <td>{{.Server}}</td>
+                        <td style="font-size: 0.85em;">
+                            {{if .LoadOptions}}
+                                {{range $key, $value := .LoadOptions}}
+                                    <div><strong>{{$key}}:</strong> {{$value}}</div>
+                                {{end}}
+                            {{else}}
+                                <em>none</em>
+                            {{end}}
+                        </td>
                         <td>{{.LoadRunnerInfo.StartTime.Format "15:04:05"}}</td>
                         <td>{{.LoadRunnerInfo.WorkerCfg.InFlight}}</td>
                         <td>{{.Mode}}</td>
@@ -344,15 +398,43 @@ const indexTemplate = `
         function showAddForm() {
             document.getElementById('add-form').style.display = 'block';
         }
-        
+
         function hideAddForm() {
             document.getElementById('add-form').style.display = 'none';
+            document.getElementById('load-options-container').innerHTML = '';
+            document.getElementById('load-type-select').value = '';
         }
-        
+
+        function loadOptionsForType(loadType) {
+            const container = document.getElementById('load-options-container');
+
+            if (!loadType) {
+                container.innerHTML = '';
+                return;
+            }
+
+            fetch('/api/load-options?type=' + encodeURIComponent(loadType))
+                .then(response => response.json())
+                .then(options => {
+                    let html = '<table><tr><th colspan="2" style="background-color: #f0f0f0;">Load-Specific Options</th></tr>';
+
+                    for (const [key, description] of Object.entries(options)) {
+                        html += '<tr><th>' + key + '</th>';
+                        html += '<td><input type="text" name="' + key + '" placeholder="' + description + '" style="width: 100%;"></td></tr>';
+                    }
+
+                    html += '</table>';
+                    container.innerHTML = html;
+                })
+                .catch(error => {
+                    container.innerHTML = '<p style="color: red;">Error loading options: ' + error + '</p>';
+                });
+        }
+
         function showEditForm(runnerId, inflight, mode, qps, timeout) {
             // Hide add form if it's open
             hideAddForm();
-            
+
             document.getElementById('edit-runner-id').value = runnerId;
             document.getElementById('edit-runner-display').textContent = runnerId;
             document.getElementById('edit-inflight').value = inflight;
@@ -362,7 +444,7 @@ const indexTemplate = `
             document.getElementById('edit-form').style.display = 'block';
             document.getElementById('edit-form').scrollIntoView({ behavior: 'smooth' });
         }
-        
+
         function hideEditForm() {
             document.getElementById('edit-form').style.display = 'none';
         }

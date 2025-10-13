@@ -19,11 +19,11 @@ var (
 type CatPhotoLoad struct {
 	*catPhotoData
 	Addr     string `name:"addr" description:"Server address to connect"`
-	Balancer string `name:"balancer" descritption:"gRPC load balancing policy"`
+	Balancer string `name:"balancer" description:"gRPC load balancing policy"`
 }
 
 // NewCatPhotoLoad creates a new CatPhotoLoad instance.
-func NewCatPhotoLoad() *CatPhotoLoad {
+func NewCatPhotoLoad() Load {
 	return &CatPhotoLoad{}
 }
 

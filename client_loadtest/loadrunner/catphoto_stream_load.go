@@ -28,7 +28,7 @@ type CatPhotoStreamLoad struct {
 }
 
 // NewCatPhotoStreamLoad creates a new streaming load implementation.
-func NewCatPhotoStreamLoad() *CatPhotoStreamLoad {
+func NewCatPhotoStreamLoad() Load {
 	return &CatPhotoStreamLoad{}
 }
 

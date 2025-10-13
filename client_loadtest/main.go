@@ -50,6 +50,7 @@ func main() {
 	mux.HandleFunc("POST /add-runner", webHandler.HandleAddRunner)
 	mux.HandleFunc("POST /remove-runner", webHandler.HandleRemoveRunner)
 	mux.HandleFunc("POST /update-runner", webHandler.HandleUpdateRunner)
+	mux.HandleFunc("GET /api/load-options", webHandler.HandleGetLoadOptions)
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.Handle("GET /tracez", zpagesHandler)
 
