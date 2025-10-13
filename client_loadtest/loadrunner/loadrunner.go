@@ -22,8 +22,9 @@ type LoadRunner struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	load     Load
-	recorder func(float64, bool)
+	load        Load
+	loadOptions map[string]string
+	recorder    func(float64, bool)
 
 	startTime time.Time
 	logger    *log.Logger
@@ -58,7 +59,7 @@ func NewLoadRunner(ctx context.Context,
 	}
 
 	// Initialize load
-	if err := load.Init(ctx); err != nil {
+	if err := load.Init(ctx, res.loadOptions); err != nil {
 		return nil, fmt.Errorf("failed to initialize load: %v", err)
 	}
 
@@ -92,6 +93,12 @@ func WithLogger(logger *log.Logger) func(lr *LoadRunner) {
 func WithRecorder(recorder func(float64, bool)) func(*LoadRunner) {
 	return func(lr *LoadRunner) {
 		lr.recorder = recorder
+	}
+}
+
+func WithLoadOptions(options map[string]string) func(*LoadRunner) {
+	return func(lr *LoadRunner) {
+		lr.loadOptions = options
 	}
 }
 
