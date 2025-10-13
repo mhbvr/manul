@@ -12,7 +12,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc"
 )
 
 var (
@@ -22,25 +21,28 @@ var (
 // CatPhotoStreamLoad implements the Load interface using streaming gRPC.
 type CatPhotoStreamLoad struct {
 	*catPhotoData
-	minBatchSize int // Minimum number of photos to request per stream
-	maxBatchSize int // Maximum number of photos to request per stream
+	Addr         string `name:"addr" description:"Server address to connect"`
+	Balancer     string `name:"balancer" description:"gRPC load balancing policy"`
+	MinBatchSize int    `name:"min_batch_size" description:"Minimum number of photos to request per stream"`
+	MaxBatchSize int    `name:"max_batch_size" description:"Maximum number of photos to request per stream"`
 }
 
 // NewCatPhotoStreamLoad creates a new streaming load implementation.
-func NewCatPhotoStreamLoad(serverAddr string, minBatchSize, maxBatchSize int, grpcOpts []grpc.DialOption) *CatPhotoStreamLoad {
-	return &CatPhotoStreamLoad{
-		catPhotoData: &catPhotoData{
-			serverAddr: serverAddr,
-			grpcOpts:   grpcOpts,
-		},
-		minBatchSize: minBatchSize,
-		maxBatchSize: maxBatchSize,
-	}
+func NewCatPhotoStreamLoad() *CatPhotoStreamLoad {
+	return &CatPhotoStreamLoad{}
+}
+
+func (l *CatPhotoStreamLoad) Options() map[string]string {
+	return GetOptionsDesc(l)
 }
 
 // Init creates the gRPC connection and fetches available cat and photo IDs from the server.
-func (l *CatPhotoStreamLoad) Init(ctx context.Context) error {
-	data, err := initCatPhotoData(ctx, l.serverAddr, l.grpcOpts)
+func (l *CatPhotoStreamLoad) Init(ctx context.Context, options map[string]string) error {
+	err := ParseOptions(options, l)
+	if err != nil {
+		return err
+	}
+	data, err := initCatPhotoData(ctx, l.Addr, l.Balancer)
 	if err != nil {
 		return err
 	}
@@ -55,9 +57,9 @@ func (l *CatPhotoStreamLoad) Job(ctx context.Context) (time.Duration, error) {
 	defer span.End()
 
 	// Calculate random batch size
-	batchSize := l.minBatchSize
-	if l.maxBatchSize > l.minBatchSize {
-		batchSize = l.minBatchSize + rand.Intn(l.maxBatchSize-l.minBatchSize+1)
+	batchSize := l.MinBatchSize
+	if l.MaxBatchSize > l.MinBatchSize {
+		batchSize = l.MinBatchSize + rand.Intn(l.MaxBatchSize-l.MinBatchSize+1)
 	}
 
 	// Build a batch of random photo requests

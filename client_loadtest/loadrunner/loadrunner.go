@@ -118,4 +118,3 @@ func (lr *LoadRunner) Close() {
 	lr.cancel(lrClosed)
 	lr.load.Close()
 }
-

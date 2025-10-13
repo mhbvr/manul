@@ -7,36 +7,44 @@ import (
 	"time"
 
 	pb "github.com/mhbvr/manul/proto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // catPhotoData holds the common data for cat photo load implementations.
 type catPhotoData struct {
-	serverAddr string
-	grpcOpts   []grpc.DialOption
-	client     pb.CatPhotosServiceClient
-	conn       *grpc.ClientConn
-	cats       []uint64
-	photos     map[uint64][]uint64
+	client pb.CatPhotosServiceClient
+	conn   *grpc.ClientConn
+	cats   []uint64
+	photos map[uint64][]uint64
 }
 
 // initCatPhotoData initializes the gRPC connection and fetches cat/photo IDs.
-func initCatPhotoData(ctx context.Context, serverAddr string, grpcOpts []grpc.DialOption) (*catPhotoData, error) {
+func initCatPhotoData(ctx context.Context, serverAddr string, balancer string) (*catPhotoData, error) {
+	var err error
+	grpcOpts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	}
+
+	if balancer != "" {
+		cfg := fmt.Sprintf(`{"loadBalancingPolicy":"%s"}`, balancer)
+		grpcOpts = append(grpcOpts, grpc.WithDefaultServiceConfig(cfg))
+	}
+
 	data := &catPhotoData{
-		serverAddr: serverAddr,
-		grpcOpts:   grpcOpts,
-		photos:     make(map[uint64][]uint64),
-		cats:       make([]uint64, 0),
+		photos: make(map[uint64][]uint64),
+		cats:   make([]uint64, 0),
 	}
 
 	// Create new gRPC connection
-	conn, err := grpc.NewClient(serverAddr, grpcOpts...)
+	data.conn, err = grpc.NewClient(serverAddr, grpcOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to server: %v", err)
 	}
 
-	data.conn = conn
-	data.client = pb.NewCatPhotosServiceClient(conn)
+	data.client = pb.NewCatPhotosServiceClient(data.conn)
 
 	// Fetch available IDs
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)

@@ -166,32 +166,73 @@ func TestParseOptions_EmptyMap(t *testing.T) {
 }
 
 func TestGetOptionDescriptions(t *testing.T) {
+	target := TestOptions{
+		StringField:  "default_string",
+		IntField:     100,
+		Int64Field:   200,
+		UintField:    300,
+		Uint64Field:  400,
+		BoolField:    true,
+		Float32Field: 1.5,
+		Float64Field: 2.5,
+	}
+	descriptions := GetOptionDescriptions(&target)
+
+	expected := map[string]struct {
+		description  string
+		defaultValue string
+	}{
+		"string_opt":  {"A string option", "default_string"},
+		"int_opt":     {"An int option", "100"},
+		"int64_opt":   {"An int64 option", "200"},
+		"uint_opt":    {"A uint option", "300"},
+		"uint64_opt":  {"A uint64 option", "400"},
+		"bool_opt":    {"A bool option", "true"},
+		"float32_opt": {"A float32 option", "1.5"},
+		"float64_opt": {"A float64 option", "2.5"},
+	}
+
+	if len(descriptions) != len(expected) {
+		t.Errorf("Expected %d descriptions, got %d", len(expected), len(descriptions))
+	}
+
+	for _, desc := range descriptions {
+		exp, ok := expected[desc.Name]
+		if !ok {
+			t.Errorf("Unexpected option '%s'", desc.Name)
+			continue
+		}
+		if desc.Description != exp.description {
+			t.Errorf("Option '%s': expected description '%s', got '%s'", desc.Name, exp.description, desc.Description)
+		}
+		if desc.DefaultValue != exp.defaultValue {
+			t.Errorf("Option '%s': expected default value '%s', got '%s'", desc.Name, exp.defaultValue, desc.DefaultValue)
+		}
+	}
+}
+
+func TestGetOptionDescriptions_ZeroValues(t *testing.T) {
 	var target TestOptions
 	descriptions := GetOptionDescriptions(&target)
 
-	expectedDescriptions := map[string]string{
-		"string_opt":  "A string option",
-		"int_opt":     "An int option",
-		"int64_opt":   "An int64 option",
-		"uint_opt":    "A uint option",
-		"uint64_opt":  "A uint64 option",
-		"bool_opt":    "A bool option",
-		"float32_opt": "A float32 option",
-		"float64_opt": "A float64 option",
-	}
-
-	if len(descriptions) != len(expectedDescriptions) {
-		t.Errorf("Expected %d descriptions, got %d", len(expectedDescriptions), len(descriptions))
-	}
-
-	for name, expectedDesc := range expectedDescriptions {
-		desc, ok := descriptions[name]
-		if !ok {
-			t.Errorf("Missing description for option '%s'", name)
-			continue
-		}
-		if desc != expectedDesc {
-			t.Errorf("Option '%s': expected description '%s', got '%s'", name, expectedDesc, desc)
+	for _, desc := range descriptions {
+		switch desc.Name {
+		case "string_opt":
+			if desc.DefaultValue != "" {
+				t.Errorf("Expected empty string for string_opt, got '%s'", desc.DefaultValue)
+			}
+		case "int_opt", "int64_opt", "uint_opt", "uint64_opt":
+			if desc.DefaultValue != "0" {
+				t.Errorf("Expected '0' for %s, got '%s'", desc.Name, desc.DefaultValue)
+			}
+		case "bool_opt":
+			if desc.DefaultValue != "false" {
+				t.Errorf("Expected 'false' for bool_opt, got '%s'", desc.DefaultValue)
+			}
+		case "float32_opt", "float64_opt":
+			if desc.DefaultValue != "0" {
+				t.Errorf("Expected '0' for %s, got '%s'", desc.Name, desc.DefaultValue)
+			}
 		}
 	}
 }
@@ -201,7 +242,7 @@ func TestGetOptionDescriptions_NonStruct(t *testing.T) {
 	descriptions := GetOptionDescriptions(&notStruct)
 
 	if len(descriptions) != 0 {
-		t.Errorf("Expected empty map for non-struct, got %d entries", len(descriptions))
+		t.Errorf("Expected empty list for non-struct, got %d entries", len(descriptions))
 	}
 }
 

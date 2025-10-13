@@ -94,18 +94,20 @@ func setField(field reflect.Value, value string) error {
 	return nil
 }
 
-// GetOptionDescriptions returns a map of option names to their descriptions
-// by inspecting the struct tags.
-func GetOptionDescriptions(target interface{}) map[string]string {
-	descriptions := make(map[string]string)
+// GetOptionDesc returns a list of option descriptions
+// by inspecting the struct tags and current values.
+func GetOptionsDesc(target interface{}) map[string]string {
+	res := make(map[string]string)
 
+	v := reflect.ValueOf(target)
 	t := reflect.TypeOf(target)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
+		v = v.Elem()
 	}
 
 	if t.Kind() != reflect.Struct {
-		return descriptions
+		return res
 	}
 
 	for i := 0; i < t.NumField(); i++ {
@@ -117,8 +119,8 @@ func GetOptionDescriptions(target interface{}) map[string]string {
 		}
 
 		description := field.Tag.Get("description")
-		descriptions[optionName] = description
+		res[optionName] = description
 	}
 
-	return descriptions
+	return res
 }

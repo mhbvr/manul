@@ -9,7 +9,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc"
 )
 
 var (
@@ -19,21 +18,26 @@ var (
 // CatPhotoLoad implements the Load interface for cat photo load testing.
 type CatPhotoLoad struct {
 	*catPhotoData
+	Addr     string `name:"addr" description:"Server address to connect"`
+	Balancer string `name:"balancer" descritption:"gRPC load balancing policy"`
 }
 
 // NewCatPhotoLoad creates a new CatPhotoLoad instance.
-func NewCatPhotoLoad(serverAddr string, grpcOpts []grpc.DialOption) *CatPhotoLoad {
-	return &CatPhotoLoad{
-		catPhotoData: &catPhotoData{
-			serverAddr: serverAddr,
-			grpcOpts:   grpcOpts,
-		},
-	}
+func NewCatPhotoLoad() *CatPhotoLoad {
+	return &CatPhotoLoad{}
+}
+
+func (l *CatPhotoLoad) Options() map[string]string {
+	return GetOptionsDesc(l)
 }
 
 // Init creates the gRPC connection and fetches available cat and photo IDs from the server.
-func (l *CatPhotoLoad) Init(ctx context.Context) error {
-	data, err := initCatPhotoData(ctx, l.serverAddr, l.grpcOpts)
+func (l *CatPhotoLoad) Init(ctx context.Context, options map[string]string) error {
+	err := ParseOptions(options, l)
+	if err != nil {
+		return err
+	}
+	data, err := initCatPhotoData(ctx, l.Addr, l.Balancer)
 	if err != nil {
 		return err
 	}
