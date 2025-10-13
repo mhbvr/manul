@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"time"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	pb "github.com/mhbvr/manul/proto"
@@ -14,6 +16,76 @@ import (
 	"google.golang.org/grpc/channelz/service"
 	"google.golang.org/grpc/orca"
 )
+
+// debugUnaryServerInterceptor logs all unary gRPC method calls when debug is enabled
+func debugUnaryServerInterceptor(
+	ctx context.Context,
+	req interface{},
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (interface{}, error) {
+	start := time.Now()
+	log.Printf("[DEBUG] gRPC unary request: method=%s req=%+v", info.FullMethod, req)
+
+	resp, err := handler(ctx, req)
+	duration := time.Since(start)
+
+	if err != nil {
+		log.Printf("[DEBUG] gRPC unary response: method=%s duration=%v error=%v", info.FullMethod, duration, err)
+	} else {
+		log.Printf("[DEBUG] gRPC unary response: method=%s duration=%v", info.FullMethod, duration)
+	}
+
+	return resp, err
+}
+
+// wrappedServerStream wraps grpc.ServerStream to intercept RecvMsg and SendMsg calls
+type wrappedServerStream struct {
+	grpc.ServerStream
+	method string
+}
+
+func (w *wrappedServerStream) RecvMsg(m interface{}) error {
+	err := w.ServerStream.RecvMsg(m)
+	if err != nil {
+		log.Printf("[DEBUG] gRPC stream RecvMsg: method=%s error=%v", w.method, err)
+	} else {
+		log.Printf("[DEBUG] gRPC stream RecvMsg: method=%s msg=%+v", w.method, m)
+	}
+	return err
+}
+
+func (w *wrappedServerStream) SendMsg(m interface{}) error {
+	return w.ServerStream.SendMsg(m)
+}
+
+// debugStreamServerInterceptor logs all streaming gRPC method calls when debug is enabled
+func debugStreamServerInterceptor(
+	srv interface{},
+	ss grpc.ServerStream,
+	info *grpc.StreamServerInfo,
+	handler grpc.StreamHandler,
+) error {
+	start := time.Now()
+	log.Printf("[DEBUG] gRPC stream start: method=%s", info.FullMethod)
+
+	// Wrap the stream to log all RecvMsg and SendMsg calls
+	wrappedStream := &wrappedServerStream{
+		ServerStream: ss,
+		method:       info.FullMethod,
+	}
+
+	err := handler(srv, wrappedStream)
+	duration := time.Since(start)
+
+	if err != nil {
+		log.Printf("[DEBUG] gRPC stream end: method=%s duration=%v error=%v", info.FullMethod, duration, err)
+	} else {
+		log.Printf("[DEBUG] gRPC stream end: method=%s duration=%v", info.FullMethod, duration)
+	}
+
+	return err
+}
 
 var (
 	host               = flag.String("host", "localhost", "Server host")
@@ -24,10 +96,16 @@ var (
 	orcaEnabled        = flag.Bool("orca", false, "Enable ORCA load reporting")
 	orcaThreshold      = flag.Int("orca-num-req-report", 10, "Update utilization after every N requests")
 	maxConcurrentReads = flag.Int("max-concurrent-reads", 0, "Maximum number of concurrent database reads (0 = unlimited)")
+	debug              = flag.Bool("debug", false, "Enable debug logging for all gRPC requests")
 )
 
 func main() {
 	flag.Parse()
+
+	if *debug {
+		log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+		log.Println("Debug mode enabled - logging all gRPC requests")
+	}
 
 	if *dbPath == "" {
 		log.Fatal("Database path must be specified with -db flag")
@@ -52,7 +130,19 @@ func main() {
 		log.Printf("ORCA load reporting enabled (update after every %d requests)", *orcaThreshold)
 	}
 
-	serverOptions = append(serverOptions, grpc.ChainUnaryInterceptor(grpc_prometheus.UnaryServerInterceptor))
+	// Build unary interceptor chain
+	unaryInterceptors := []grpc.UnaryServerInterceptor{grpc_prometheus.UnaryServerInterceptor}
+	if *debug {
+		unaryInterceptors = append(unaryInterceptors, debugUnaryServerInterceptor)
+	}
+	serverOptions = append(serverOptions, grpc.ChainUnaryInterceptor(unaryInterceptors...))
+
+	// Build stream interceptor chain
+	streamInterceptors := []grpc.StreamServerInterceptor{grpc_prometheus.StreamServerInterceptor}
+	if *debug {
+		streamInterceptors = append(streamInterceptors, debugStreamServerInterceptor)
+	}
+	serverOptions = append(serverOptions, grpc.ChainStreamInterceptor(streamInterceptors...))
 
 	s := grpc.NewServer(serverOptions...)
 
