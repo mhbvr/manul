@@ -27,10 +27,11 @@ message ListPhotosResponse {
 }
 
 enum ScalingAlgorithm {
-  NEAREST_NEIGHBOR = 0;
-  BILINEAR = 1;
-  CATMULL_ROM = 2;
-  APPROX_BILINEAR = 3;
+  NONE = 0;
+  NEAREST_NEIGHBOR = 1;
+  BILINEAR = 2;
+  CATMULL_ROM = 3;
+  APPROX_BILINEAR = 4;
 }
 
 message GetPhotoRequest {

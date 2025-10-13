@@ -21,10 +21,15 @@ var (
 // CatPhotoStreamLoad implements the Load interface using streaming gRPC.
 type CatPhotoStreamLoad struct {
 	*catPhotoData
-	Addr         string `name:"addr" description:"Server address to connect"`
-	Balancer     string `name:"balancer" description:"gRPC load balancing policy"`
-	MinBatchSize int    `name:"min_batch_size" description:"Minimum number of photos to request per stream"`
-	MaxBatchSize int    `name:"max_batch_size" description:"Maximum number of photos to request per stream"`
+	Addr             string `name:"addr" description:"Server address to connect"`
+	Balancer         string `name:"balancer" description:"gRPC load balancing policy"`
+	MinBatchSize     int    `name:"min_batch_size" description:"Minimum number of photos to request per stream"`
+	MaxBatchSize     int    `name:"max_batch_size" description:"Maximum number of photos to request per stream"`
+	Width            uint32 `name:"width" description:"Target width for image scaling (0 = no scaling)"`
+	ScalingAlgorithm string `name:"scaling_algorithm" description:"Scaling algorithm: NEAREST_NEIGHBOR, BILINEAR, CATMULL_ROM, APPROX_BILINEAR"`
+
+	// Parsed scaling algorithm enum value
+	scalingAlgo pb.ScalingAlgorithm
 }
 
 // NewCatPhotoStreamLoad creates a new streaming load implementation.
@@ -42,6 +47,15 @@ func (l *CatPhotoStreamLoad) Init(ctx context.Context, options map[string]string
 	if err != nil {
 		return err
 	}
+
+	// Parse scaling algorithm if provided
+	if l.Width != 0 {
+		l.scalingAlgo, err = parseScalingAlgorithm(l.ScalingAlgorithm)
+		if err != nil {
+			return err
+		}
+	}
+
 	data, err := initCatPhotoData(ctx, l.Addr, l.Balancer)
 	if err != nil {
 		return err
@@ -82,9 +96,14 @@ func (l *CatPhotoStreamLoad) Job(ctx context.Context) (time.Duration, error) {
 	))
 
 	start := time.Now()
-	stream, err := l.client.GetPhotosStream(ctx, &pb.GetPhotosStreamRequest{
+	req := &pb.GetPhotosStreamRequest{
 		PhotoRequests: photoRequests,
-	})
+	}
+	if l.Width != 0 {
+		req.Width = l.Width
+		req.ScalingAlgorithm = l.scalingAlgo
+	}
+	stream, err := l.client.GetPhotosStream(ctx, req)
 	if err != nil {
 		span.SetStatus(codes.Error, err.Error())
 		return time.Since(start), err

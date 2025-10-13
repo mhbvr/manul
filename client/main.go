@@ -46,7 +46,7 @@ func getScalingAlgorithm(alg string) pb.ScalingAlgorithm {
 	case "APPROX_BILINEAR":
 		return pb.ScalingAlgorithm_APPROX_BILINEAR
 	default:
-		return pb.ScalingAlgorithm_BILINEAR
+		return pb.ScalingAlgorithm_NONE
 	}
 }
 

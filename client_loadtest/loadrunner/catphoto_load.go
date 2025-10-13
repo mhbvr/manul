@@ -18,8 +18,13 @@ var (
 // CatPhotoLoad implements the Load interface for cat photo load testing.
 type CatPhotoLoad struct {
 	*catPhotoData
-	Addr     string `name:"addr" description:"Server address to connect"`
-	Balancer string `name:"balancer" description:"gRPC load balancing policy"`
+	Addr             string `name:"addr" description:"Server address to connect"`
+	Balancer         string `name:"balancer" description:"gRPC load balancing policy"`
+	Width            uint32 `name:"width" description:"Target width for image scaling (0 = no scaling)"`
+	ScalingAlgorithm string `name:"scaling_algorithm" description:"Scaling algorithm: NEAREST_NEIGHBOR, BILINEAR, CATMULL_ROM, APPROX_BILINEAR"`
+
+	// Parsed scaling algorithm enum value
+	scalingAlgo pb.ScalingAlgorithm
 }
 
 // NewCatPhotoLoad creates a new CatPhotoLoad instance.
@@ -37,6 +42,15 @@ func (l *CatPhotoLoad) Init(ctx context.Context, options map[string]string) erro
 	if err != nil {
 		return err
 	}
+
+	// Parse scaling algorithm if provided
+	if l.Width != 0 {
+		l.scalingAlgo, err = parseScalingAlgorithm(l.ScalingAlgorithm)
+		if err != nil {
+			return err
+		}
+	}
+
 	data, err := initCatPhotoData(ctx, l.Addr, l.Balancer)
 	if err != nil {
 		return err
@@ -64,10 +78,15 @@ func (l *CatPhotoLoad) Job(ctx context.Context) (time.Duration, error) {
 	))
 
 	start := time.Now()
-	_, err = l.client.GetPhoto(ctx, &pb.GetPhotoRequest{
+	req := &pb.GetPhotoRequest{
 		CatId:   catID,
 		PhotoId: photoID,
-	})
+	}
+	if l.Width != 0 {
+		req.Width = l.Width
+		req.ScalingAlgorithm = l.scalingAlgo
+	}
+	_, err = l.client.GetPhoto(ctx, req)
 	duration := time.Since(start)
 
 	if err != nil {

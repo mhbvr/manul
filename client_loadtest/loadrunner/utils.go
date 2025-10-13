@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	pb "github.com/mhbvr/manul/proto"
@@ -92,4 +93,19 @@ func (d *catPhotoData) getRandomPhoto() (catID uint64, photoID uint64, err error
 	photoID = photos[rand.Intn(len(photos))]
 
 	return catID, photoID, nil
+}
+
+// parseScalingAlgorithm converts a string to the corresponding ScalingAlgorithm enum.
+// Returns an error if the algorithm string is not a valid algorithm name.
+// Caller should check for empty string before calling this function.
+func parseScalingAlgorithm(algorithm string) (pb.ScalingAlgorithm, error) {
+	// Convert to uppercase to match the protobuf enum naming convention
+	enumName := strings.ToUpper(strings.TrimSpace(algorithm))
+
+	value, ok := pb.ScalingAlgorithm_value[enumName]
+	if !ok {
+		return 0, fmt.Errorf("invalid scaling algorithm: %s (valid options: NEAREST_NEIGHBOR, BILINEAR, CATMULL_ROM, APPROX_BILINEAR)", algorithm)
+	}
+
+	return pb.ScalingAlgorithm(value), nil
 }
