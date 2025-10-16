@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"time"
 
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
@@ -164,6 +165,7 @@ func main() {
 		metricsAddr := fmt.Sprintf("%s:%d", *host, *metricsPort)
 		http.Handle("/metrics", promhttp.Handler())
 		log.Printf("Prometheus metrics server listening on %s", metricsAddr)
+		log.Printf("pprof endpoints available at http://%s/debug/pprof/", metricsAddr)
 		if err := http.ListenAndServe(metricsAddr, nil); err != nil {
 			log.Fatalf("Failed to serve metrics: %v", err)
 		}
