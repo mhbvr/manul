@@ -37,7 +37,7 @@ func New(dbDir string) (*FileTreeDB, error) {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	db, err := bolt.Open(metaPath, 0600, &bolt.Options{})
+	db, err := bolt.Open(metaPath, 0644, &bolt.Options{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open bbolt database: %w", err)
 	}
