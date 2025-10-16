@@ -4,10 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/mhbvr/manul"
+	"github.com/ncw/directio"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -223,9 +225,37 @@ func (w *FileTreeDB) GetPhotoData(catID, photoID uint64) ([]byte, error) {
 	}
 
 	photoPath := w.getPhotoPath(catID, photoID)
-	photoData, err := os.ReadFile(photoPath)
+
+	// Open file with O_DIRECT flag
+	file, err := directio.OpenFile(photoPath, os.O_RDONLY, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read photo file %s: %w", photoPath, err)
+		return nil, fmt.Errorf("failed to open photo file %s: %w", photoPath, err)
+	}
+	defer file.Close()
+
+	// Get file size
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat photo file %s: %w", photoPath, err)
+	}
+	fileSize := fileInfo.Size()
+
+	// Allocate aligned block for reading
+	block := directio.AlignedBlock(directio.BlockSize)
+	photoData := make([]byte, 0, fileSize)
+
+	// Read file in chunks
+	for {
+		n, err := io.ReadFull(file, block)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, fmt.Errorf("failed to read photo file %s: %w", photoPath, err)
+		}
+		if n > 0 {
+			photoData = append(photoData, block[:n]...)
+		}
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			break
+		}
 	}
 
 	return photoData, nil
