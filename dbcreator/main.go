@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,6 +15,7 @@ import (
 	"github.com/mhbvr/manul/db/bolt"
 	"github.com/mhbvr/manul/db/filetree"
 	"github.com/mhbvr/manul/db/pebble"
+	"golang.org/x/image/draw"
 )
 
 func main() {
@@ -20,6 +24,7 @@ func main() {
 		dbPath    = flag.String("db", "", "Database path (directory for filetree, file for bolt/pebble)")
 		srcDir    = flag.String("src", "", "Source directory containing photo files")
 		batchSize = flag.Int("batch-size", 100, "Number of photos to process in each transaction")
+		scale     = flag.Float64("scale", 1.0, "Image scaling factor (0.0 to 1.0, where 1.0 = no scaling)")
 	)
 	flag.Parse()
 
@@ -29,6 +34,10 @@ func main() {
 	
 	if *dbPath == "" {
 		log.Fatal("Database path must be specified with -db flag")
+	}
+
+	if *scale <= 0.0 || *scale > 1.0 {
+		log.Fatal("Scale factor must be between 0.0 (exclusive) and 1.0 (inclusive)")
 	}
 
 	var writer manul.DBWriter
@@ -52,6 +61,9 @@ func main() {
 
 	fmt.Printf("Creating %s database at: %s\n", *dbType, *dbPath)
 	fmt.Printf("Scanning directory: %s\n", *srcDir)
+	if *scale < 1.0 {
+		fmt.Printf("Image scaling enabled: %.2f\n", *scale)
+	}
 
 	var totalFiles, skippedFiles int
 	var filePaths []string
@@ -114,6 +126,15 @@ func main() {
 				log.Fatalf("Failed to read photo file %s: %v", path, err)
 			}
 
+			// Scale the image if needed
+			if *scale < 1.0 {
+				scaledData, err := scaleImage(photoData, *scale)
+				if err != nil {
+					log.Fatalf("Failed to scale photo file %s: %v", path, err)
+				}
+				photoData = scaledData
+			}
+
 			batch = append(batch, manul.PhotoItem{
 				CatID:     catID,
 				PhotoID:   photoID,
@@ -158,4 +179,36 @@ func GetIDs(filename string) (catID, photoID uint64, ok bool) {
 		return 0, 0, false
 	}
 	return cat, photo, true
+}
+
+// scaleImage scales an image by the given factor using bilinear interpolation
+func scaleImage(photoData []byte, scaleFactor float64) ([]byte, error) {
+	if scaleFactor == 1.0 {
+		return photoData, nil
+	}
+
+	// Decode the JPEG image
+	img, err := jpeg.Decode(bytes.NewReader(photoData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode image: %w", err)
+	}
+
+	// Calculate new dimensions
+	bounds := img.Bounds()
+	newWidth := int(float64(bounds.Dx()) * scaleFactor)
+	newHeight := int(float64(bounds.Dy()) * scaleFactor)
+
+	// Create a new image with the scaled dimensions
+	scaledImg := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
+
+	// Use bilinear interpolation for scaling
+	draw.BiLinear.Scale(scaledImg, scaledImg.Bounds(), img, bounds, draw.Over, nil)
+
+	// Encode the scaled image back to JPEG with default quality
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, scaledImg, nil); err != nil {
+		return nil, fmt.Errorf("failed to encode scaled image: %w", err)
+	}
+
+	return buf.Bytes(), nil
 }
