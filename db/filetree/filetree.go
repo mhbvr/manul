@@ -241,7 +241,8 @@ func (w *FileTreeDB) GetPhotoData(catID, photoID uint64) ([]byte, error) {
 	fileSize := fileInfo.Size()
 
 	// Allocate aligned block for reading
-	block := directio.AlignedBlock(directio.BlockSize)
+	// Using 1MB block as approx photo size
+	block := directio.AlignedBlock(1024 * 1024)
 	photoData := make([]byte, 0, fileSize)
 
 	// Read file in chunks
