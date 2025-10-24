@@ -89,15 +89,15 @@ func debugStreamServerInterceptor(
 }
 
 var (
-	host               = flag.String("host", "localhost", "Server host")
-	port               = flag.Int("port", 8081, "Server port")
-	metricsPort        = flag.Int("metrics-port", 8082, "Prometheus metrics port")
-	dbPath             = flag.String("db", "", "Database path (directory for filetree, file for bolt/pebble)")
-	dbType             = flag.String("db-type", "filetree", "Database type: filetree, bolt, or pebble")
-	orcaEnabled        = flag.Bool("orca", false, "Enable ORCA load reporting")
-	orcaThreshold      = flag.Int("orca-num-req-report", 10, "Update utilization after every N requests")
-	maxConcurrentReads = flag.Int("max-concurrent-reads", 0, "Maximum number of concurrent database reads (0 = unlimited)")
-	debug              = flag.Bool("debug", false, "Enable debug logging for all gRPC requests")
+	host                    = flag.String("host", "localhost", "Server host")
+	port                    = flag.Int("port", 8081, "Server port")
+	metricsPort             = flag.Int("metrics-port", 8082, "Prometheus metrics port")
+	dbPath                  = flag.String("db", "", "Database path (directory for filetree, file for bolt/pebble)")
+	dbType                  = flag.String("db-type", "filetree", "Database type: filetree, bolt, or pebble")
+	orcaEnabled             = flag.Bool("orca", false, "Enable ORCA load reporting")
+	orcaUpdateInterval      = flag.Duration("orca-update-interval", 1*time.Second, "Interval between CPU utilization updates for ORCA reporting")
+	maxConcurrentReads      = flag.Int("max-concurrent-reads", 0, "Maximum number of concurrent database reads (0 = unlimited)")
+	debug                   = flag.Bool("debug", false, "Enable debug logging for all gRPC requests")
 )
 
 func main() {
@@ -123,12 +123,12 @@ func main() {
 	var serverOptions []grpc.ServerOption
 
 	if *orcaEnabled {
-		orcaReporter = NewORCAReporter(*orcaThreshold)
+		orcaReporter = NewORCAReporter(*orcaUpdateInterval)
 
 		// Add call metrics interceptor for trailer-based reporting
 		serverOptions = append(serverOptions, orca.CallMetricsServerOption(orcaReporter.GetServerMetricsProvider()))
 
-		log.Printf("ORCA load reporting enabled (update after every %d requests)", *orcaThreshold)
+		log.Printf("ORCA load reporting enabled (CPU utilization update interval: %v)", *orcaUpdateInterval)
 	}
 
 	// Build unary interceptor chain

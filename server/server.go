@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
-	"time"
 
 	"github.com/mhbvr/manul"
 	"github.com/mhbvr/manul/db/bolt"
@@ -144,13 +143,12 @@ func (s *CatPhotosServer) ListPhotos(ctx context.Context, req *pb.ListPhotosRequ
 }
 
 func (s *CatPhotosServer) GetPhoto(ctx context.Context, req *pb.GetPhotoRequest) (*pb.GetPhotoResponse, error) {
-	startTime := time.Now()
 	orca.CallMetricsRecorderFromContext(ctx)
 	var photoData []byte
 	var err error
 	defer func() {
 		if s.orcaReporter != nil {
-			s.orcaReporter.RecordRequest(time.Since(startTime))
+			s.orcaReporter.RecordRequest()
 		}
 	}()
 
@@ -182,11 +180,10 @@ func (s *CatPhotosServer) GetPhoto(ctx context.Context, req *pb.GetPhotoRequest)
 
 func (s *CatPhotosServer) GetPhotosStream(req *pb.GetPhotosStreamRequest, stream pb.CatPhotosService_GetPhotosStreamServer) error {
 	var err error
-	startTime := time.Now()
 	orca.CallMetricsRecorderFromContext(stream.Context())
 	defer func() {
 		if s.orcaReporter != nil {
-			s.orcaReporter.RecordRequest(time.Since(startTime))
+			s.orcaReporter.RecordRequest()
 		}
 	}()
 
